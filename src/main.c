@@ -18,7 +18,7 @@
   } while (0);
 
 int main(int argc, char** argv) {
-  char spi_dev_path[] = "/dev/spidev10.0";
+  char spi_dev_path[] = "/dev/spidev0.0";
 
   // open the SPI device
   int spi_fd = open(spi_dev_path, O_RDWR);
@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
   }
 
   // SPI config
-  uint8_t buf8 = SPI_CPHA | SPI_CPOL;
+  uint8_t buf8 = 0;  // CPOL=0, CPHA=0
   IOCTL_WITH_ERR_HANDLING(spi_fd, SPI_IOC_WR_MODE, &buf8,
                           "couldn't set SPI mode\n");
   buf8 = 0;  // MSB first
@@ -42,6 +42,17 @@ int main(int argc, char** argv) {
                           "couldn't set SPI max speed\n");
 
   printf("configured SPI succesfully\n");
+
+  // some example SPI operations
+  struct spi_ioc_transfer xfer[2] = {0};
+  uint8_t spi_buf_tx[1] = {0b10110001};
+  uint8_t spi_buf_rx[1] = {0};
+  xfer[0].tx_buf = (uint64_t)spi_buf_tx;
+  xfer[0].rx_buf = (uint64_t)spi_buf_rx;
+  xfer[0].len = 1;
+  IOCTL_WITH_ERR_HANDLING(spi_fd, SPI_IOC_MESSAGE(1), xfer,
+                          "couldn't perform SPI transfer");
+  printf("Received value: %hhX\n", ((uint8_t*)(xfer[0].rx_buf))[0]);
 
   // close the SPI device
   close(spi_fd);
