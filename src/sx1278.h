@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "gpio.h"
 #include "spi.h"
 
 #define SX1278_REG_FIFO 0x00
@@ -52,10 +53,17 @@
 
 typedef struct {
   spi_t* spi;
+  gpio_ctl_t* gpio;
   bool dev_detected;
 } sx1278_t;
 
+extern void sx1278_init(sx1278_t* self,
+                        spi_t* spi,
+                        gpio_ctl_t* gpio,
+                        uint64_t rf_freq);
+extern void sx1278_deinit(sx1278_t* self);
 extern void sx1278_reset(sx1278_t* self);
 extern bool sx1278_check_device(sx1278_t* self);
+extern void sx1278_set_mode(sx1278_t* self, uint8_t mode);
 
 #endif
