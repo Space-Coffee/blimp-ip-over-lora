@@ -1,6 +1,7 @@
 #ifndef _BLIMP_SX1278_H
 #define _BLIMP_SX1278_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "spi.h"
@@ -51,6 +52,10 @@
 
 typedef struct {
   spi_t* spi;
+  bool dev_detected;
 } sx1278_t;
+
+extern void sx1278_reset(sx1278_t* self);
+extern bool sx1278_check_device(sx1278_t* self);
 
 #endif
