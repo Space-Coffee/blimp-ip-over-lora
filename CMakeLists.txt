@@ -4,5 +4,6 @@ project(blimp-ip-over-lora)
 
 add_executable(blimp-ip-over-lora
 	src/main.c
-	src/spi.c)
+	src/spi.c
+	src/gpio.c)
 

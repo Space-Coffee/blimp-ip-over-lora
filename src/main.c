@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "gpio.h"
 #include "spi.h"
 
 int main(int argc, char** argv) {
@@ -27,7 +28,10 @@ int main(int argc, char** argv) {
 
   // GPIO test
   char gpio_dev_path[] = "/dev/gpiochip0";
-  int gpio_fd = open(gpio_dev_path, 0);
+  gpio_ctl_t gpio_ctl;
+  uint32_t gpio_out_lines[] = {25};
+  gpio_init(&gpio_ctl, gpio_dev_path, 1, gpio_out_lines, 0, NULL);
+  /*int gpio_fd = open(gpio_dev_path, 0);
   struct gpiochip_info gpio_cinfo;
   IOCTL_WITH_ERR_HANDLING(gpio_fd, GPIO_GET_CHIPINFO_IOCTL, &gpio_cinfo,
                           "couldn't open GPIO device %s", gpio_dev_path);
@@ -54,15 +58,16 @@ int main(int argc, char** argv) {
   gpio_req.num_lines = 1;
   IOCTL_WITH_ERR_HANDLING(gpio_fd, GPIO_V2_GET_LINE_IOCTL, &gpio_req,
                           "couldn't get GPIO device %s line %d\n",
-                          gpio_dev_path, 25);
+                          gpio_dev_path, 25);*/
   for (uint8_t i = 0; i < 10; i++) {
-    struct gpio_v2_line_values gpio_vals;
-    /*gpio_vals.bits = ((uint64_t)(i % 2)) << 25;*/
-    /*gpio_vals.mask = ((uint64_t)1) << 25;*/
+    gpio_set(&gpio_ctl, i % 2, 0b1);
+    /*struct gpio_v2_line_values gpio_vals;
+    / *gpio_vals.bits = ((uint64_t)(i % 2)) << 25;* /
+    / *gpio_vals.mask = ((uint64_t)1) << 25;* /
     gpio_vals.bits = (uint64_t)(i % 2);
     gpio_vals.mask = 0b1;
     IOCTL_WITH_ERR_HANDLING(gpio_req.fd, GPIO_V2_LINE_SET_VALUES_IOCTL,
-                            &gpio_vals, "couldn't set GPIO values\n");
+                            &gpio_vals, "couldn't set GPIO values\n");*/
 
     struct timespec delay_time;
     delay_time.tv_sec = 0;
@@ -70,8 +75,8 @@ int main(int argc, char** argv) {
     nanosleep(&delay_time, NULL);
   }
 
-  close(gpio_req.fd);
-  close(gpio_fd);
+  /*close(gpio_req.fd);
+  close(gpio_fd);*/
 
   spi_deinit(&spi);
 }
