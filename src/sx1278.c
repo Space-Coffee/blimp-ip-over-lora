@@ -56,7 +56,7 @@ void sx1278_init(sx1278_t* self,
                      (1 << 2 /*CRC on*/) | (0 << 0 /*RX timeout MSB*/));
   spi_write_reg8(self->spi, SX1278_REG_SYMB_TIMEOUT_LSB,
                  0x64 /*RX timeout LSB*/);
-  spi_write_reg8(self->spi, SX1278_REG_REG_MODEM_CONFIG_3,
+  spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_3,
                  (0 << 3 /*disable low data rate optimization*/) |
                      (0 << 2 /*disable AGC*/));
   // preamble length
@@ -78,12 +78,12 @@ void sx1278_reset(sx1278_t* self) {
   delay_time.tv_nsec = 20000000;  // 20ms
   nanosleep(&delay_time, NULL);
 
-  gpio_set(&self->gpio, 0 << 0, 1 << 0);
+  gpio_set(self->gpio, 0 << 0, 1 << 0);
 
   delay_time.tv_nsec = 50000000;  // 50ms
   nanosleep(&delay_time, NULL);
 
-  gpio_set(&self->gpio, 1 << 0, 1 << 0);
+  gpio_set(self->gpio, 1 << 0, 1 << 0);
 
   delay_time.tv_nsec = 20000000;  // 20ms
   nanosleep(&delay_time, NULL);
@@ -102,4 +102,12 @@ bool sx1278_check_device(sx1278_t* self) {
 
 void sx1278_set_mode(sx1278_t* self, uint8_t mode) {
   spi_write_reg8(self->spi, SX1278_REG_OP_MODE, mode);
+}
+
+void sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
+  spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
+  spi_write_reg8(self->spi, SX1278_REG_OP_MODE,
+                 (1 << 7 /*LoRa mode*/) | (0b011 << 0 /*TX mode*/));
+
+  spi_write_bulk(self->spi, 0, data, len);
 }

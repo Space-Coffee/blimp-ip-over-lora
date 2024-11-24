@@ -19,6 +19,10 @@ typedef struct {
 extern void spi_init(spi_t* self, const char* dev_path);
 extern void spi_deinit(spi_t* self);
 extern void spi_write_reg8(spi_t* self, uint8_t addr, uint8_t val);
+extern void spi_write_bulk(spi_t* self,
+                           uint8_t addr,
+                           uint8_t* data,
+                           uint8_t len);
 extern uint8_t spi_read_reg8(spi_t* self, uint8_t addr);
 
 #endif
