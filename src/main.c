@@ -13,6 +13,7 @@
 
 #include "gpio.h"
 #include "spi.h"
+#include "sx1278.h"
 
 int main(int argc, char** argv) {
   char spi_dev_path[] = "/dev/spidev0.0";
@@ -32,14 +33,22 @@ int main(int argc, char** argv) {
   uint32_t gpio_out_lines[] = {25};
   gpio_init(&gpio_ctl, gpio_dev_path, 1, gpio_out_lines, 0, NULL);
 
-  for (uint8_t i = 0; i < 10; i++) {
+  /*for (uint8_t i = 0; i < 10; i++) {
     gpio_set(&gpio_ctl, i % 2, 0b1);
 
     struct timespec delay_time;
     delay_time.tv_sec = 0;
     delay_time.tv_nsec = 100000000;
     nanosleep(&delay_time, NULL);
+  }*/
+
+  sx1278_t lora;
+  sx1278_init(&lora, &spi, &gpio_ctl, 433000000);
+
+  if (!sx1278_send(&lora, (uint8_t*)"abcdef", 6)) {
+    fprintf(stderr, "Timeout reached when sending packet\n");
   }
+  printf("Successfully sent packet!\n");
 
   gpio_deinit(&gpio_ctl);
 

@@ -104,10 +104,27 @@ void sx1278_set_mode(sx1278_t* self, uint8_t mode) {
   spi_write_reg8(self->spi, SX1278_REG_OP_MODE, mode);
 }
 
-void sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
+bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
   spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
   spi_write_reg8(self->spi, SX1278_REG_OP_MODE,
                  (1 << 7 /*LoRa mode*/) | (0b011 << 0 /*TX mode*/));
 
-  spi_write_bulk(self->spi, 0, data, len);
+  spi_write_bulk(self->spi, SX1278_REG_FIFO, data, len);
+  spi_write_reg8(self->spi, SX1278_REG_PAYLOAD_LENGTH, len);
+  sx1278_set_mode(self, (1 << 7 /*LoRa mode*/) | (0b011 << 0 /*TX*/));
+
+  uint8_t irq_flags;
+  uint8_t counter = 255;
+  do {
+    struct timespec delay_time;
+    delay_time.tv_sec = 0;
+    delay_time.tv_nsec = 10000000;
+    nanosleep(&delay_time, NULL);
+
+    irq_flags = spi_read_reg8(self->spi, SX1278_REG_IRQ_FLAGS);
+    counter--;
+
+  } while (irq_flags & (1 << 3 /*TX done*/) && counter > 0);
+
+  return counter > 0;
 }
