@@ -22,7 +22,7 @@ void sx1278_init(sx1278_t* self,
   }
 
   // mode
-  sx1278_set_mode(self, (1 << 7 /*LoRa mode*/) | (0b001 << 0 /*standby*/));
+  sx1278_set_mode(self, (1 << 7 /*LoRa mode*/) | (0b000 << 0 /*sleep*/));
 
   // frequency
   uint64_t rf_freq_reg =
@@ -34,12 +34,12 @@ void sx1278_init(sx1278_t* self,
 
   // PA config
   spi_write_reg8(self->spi, SX1278_REG_PA_CONFIG,
-                 (0 << 7 /*PA output = RFO*/) | (0 << 4 /*Pmax = 10.8dBm*/) |
-                     (8 << 0 /*Pout = 3.8dBm*/));
+                 (1 << 7 /*PA output = PA_BOOST*/) | (2 << 4 /*Pmax = 12dBm*/) |
+                     (8 << 0 /*Pout = 10dBm*/));
   // OCP - overload current protection
   spi_write_reg8(
       self->spi, SX1278_REG_OCP,
-      (1 << 5 /*OCP on*/) | (0 << 0 /*45mA*/));  // TODO: adjust max current
+      (1 << 5 /*OCP on*/) | (17 << 0 /*140mA*/));  // TODO: adjust max current
   // LNA
   spi_write_reg8(self->spi, SX1278_REG_LNA, (0b110 << 5 /*G6 - minimum gain*/));
 
@@ -68,6 +68,8 @@ void sx1278_init(sx1278_t* self,
 
   // sync word
   spi_write_reg8(self->spi, SX1278_REG_SYNC_WORD, 0x12);
+
+  sx1278_set_mode(self, (1 << 7 /*LoRa Mode*/) | (0b001 << 0 /*standby*/));
 }
 
 void sx1278_deinit(sx1278_t* self) {}
@@ -100,31 +102,51 @@ bool sx1278_check_device(sx1278_t* self) {
   return tmp2 == tmp1 + 1;
 }
 
+uint8_t sx1278_get_version(sx1278_t* self) {
+  return spi_read_reg8(self->spi, SX1278_REG_VERSION);
+}
+
 void sx1278_set_mode(sx1278_t* self, uint8_t mode) {
   spi_write_reg8(self->spi, SX1278_REG_OP_MODE, mode);
 }
 
 bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
   spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
-  spi_write_reg8(self->spi, SX1278_REG_OP_MODE,
-                 (1 << 7 /*LoRa mode*/) | (0b011 << 0 /*TX mode*/));
 
   spi_write_bulk(self->spi, SX1278_REG_FIFO, data, len);
   spi_write_reg8(self->spi, SX1278_REG_PAYLOAD_LENGTH, len);
+
+  // Clear the IRQ flag
+  spi_write_reg8(self->spi, SX1278_REG_IRQ_FLAGS, 0xFF);
+
+  struct timespec delay_time;
+  delay_time.tv_sec = 0;
+  delay_time.tv_nsec = 1000000;  // 1ms
+  nanosleep(&delay_time, NULL);
+
   sx1278_set_mode(self, (1 << 7 /*LoRa mode*/) | (0b011 << 0 /*TX*/));
 
   uint8_t irq_flags;
-  uint8_t counter = 255;
+  int16_t counter = 1000;
   do {
-    struct timespec delay_time;
     delay_time.tv_sec = 0;
-    delay_time.tv_nsec = 10000000;
+    delay_time.tv_nsec = 100000000;  // 100ms
     nanosleep(&delay_time, NULL);
 
     irq_flags = spi_read_reg8(self->spi, SX1278_REG_IRQ_FLAGS);
     counter--;
 
-  } while (irq_flags & (1 << 3 /*TX done*/) && counter > 0);
+  } while ((irq_flags & (1 << 3 /*TX done*/)) == 0 && counter > 0);
+
+  /*delay_time.tv_sec = 4;
+  delay_time.tv_nsec = 0;
+  nanosleep(&delay_time, NULL);*/
+
+  printf("OP_MODE = 0x%X\n", spi_read_reg8(self->spi, SX1278_REG_OP_MODE));
+  printf("IRQ_FLAGS = 0x%X\n", spi_read_reg8(self->spi, SX1278_REG_IRQ_FLAGS));
+
+  // Clear the IRQ flag
+  spi_write_reg8(self->spi, SX1278_REG_IRQ_FLAGS, 0xFF);
 
   return counter > 0;
 }

@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
 
   // some example SPI operations
   uint8_t reg_val = spi_read_reg8(&spi, 0b10110001);
-  printf("Received value: %hhX\n", reg_val);
+  printf("received value: %hhX\n", reg_val);
 
   // GPIO test
   char gpio_dev_path[] = "/dev/gpiochip0";
@@ -46,10 +46,20 @@ int main(int argc, char** argv) {
   sx1278_t lora;
   sx1278_init(&lora, &spi, &gpio_ctl, 433000000);
 
-  if (!sx1278_send(&lora, (uint8_t*)"abcdef", 6)) {
-    fprintf(stderr, "Timeout reached when sending packet\n");
+  printf("SX1278 version: 0x%X\n", sx1278_get_version(&lora));
+
+  for (uint8_t i = 0; i < 4; i++) {
+    if (sx1278_send(&lora, (uint8_t*)"abcdef", 6)) {
+      printf("successfully sent packet!\n");
+    } else {
+      fprintf(stderr, "timeout reached when sending packet\n");
+    }
+
+    /*struct timespec delay_time;*/
+    /*delay_time.tv_sec = 0;*/
+    /*delay_time.tv_nsec = 100000000;  // 100ms*/
+    /*nanosleep(&delay_time, NULL);*/
   }
-  printf("Successfully sent packet!\n");
 
   int tun_fd = tun_alloc("ip-over-lora");
   printf("configured tun\n");

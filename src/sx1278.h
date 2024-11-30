@@ -50,6 +50,7 @@
 #define SX1278_REG_INVERT_IQ 0x33
 #define SX1278_REG_DETECTION_THRESHOLD 0x37
 #define SX1278_REG_SYNC_WORD 0x39
+#define SX1278_REG_VERSION 0x42
 
 typedef struct {
   spi_t* spi;
@@ -64,6 +65,7 @@ extern void sx1278_init(sx1278_t* self,
 extern void sx1278_deinit(sx1278_t* self);
 extern void sx1278_reset(sx1278_t* self);
 extern bool sx1278_check_device(sx1278_t* self);
+extern uint8_t sx1278_get_version(sx1278_t* self);
 extern void sx1278_set_mode(sx1278_t* self, uint8_t mode);
 extern bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len);
 
