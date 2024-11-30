@@ -14,6 +14,7 @@
 #include "gpio.h"
 #include "spi.h"
 #include "sx1278.h"
+#include "tun.h"
 
 int main(int argc, char** argv) {
   char spi_dev_path[] = "/dev/spidev0.0";
@@ -49,6 +50,17 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Timeout reached when sending packet\n");
   }
   printf("Successfully sent packet!\n");
+
+  int tun_fd = tun_alloc("ip-over-lora");
+  printf("configured tun\n");
+
+  uint8_t tun_buf[2048];
+  while (1) {
+    int count = read(tun_fd, tun_buf, sizeof(tun_buf));
+    if (count > 0) {
+      printf("received %d bytes from tun\n", count);
+    }
+  }
 
   gpio_deinit(&gpio_ctl);
 

@@ -6,5 +6,6 @@ add_executable(blimp-ip-over-lora
 	src/main.c
 	src/spi.c
 	src/gpio.c
-	src/sx1278.c)
+	src/sx1278.c
+	src/tun.c)
 
