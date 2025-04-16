@@ -33,26 +33,28 @@ void sx1278_init(sx1278_t* self,
   spi_write_reg8(self->spi, SX1278_REG_FR_LSB, (uint8_t)rf_freq_reg);
 
   // PA config
-  spi_write_reg8(self->spi, SX1278_REG_PA_CONFIG,
-                 (1 << 7 /*PA output = PA_BOOST*/) | (2 << 4 /*Pmax = 12dBm*/) |
-                     (8 << 0 /*Pout = 10dBm*/));
+  spi_write_reg8(
+      self->spi, SX1278_REG_PA_CONFIG,
+      (1 << 7 /*PA output = PA_BOOST*/) | (15 << 0 /*Pout = 17dBm*/));
   // OCP - overload current protection
   spi_write_reg8(
       self->spi, SX1278_REG_OCP,
       (1 << 5 /*OCP on*/) | (17 << 0 /*140mA*/));  // TODO: adjust max current
   // LNA
-  spi_write_reg8(self->spi, SX1278_REG_LNA, (0b110 << 5 /*G6 - minimum gain*/));
+  spi_write_reg8(self->spi, SX1278_REG_LNA,
+                 (0b110 << 5 /*G6 - minimum gain*/) |
+                     (0b00 << 0 /*high freq. LNA boost off*/));
 
   // setup FIFO
   spi_write_reg8(self->spi, SX1278_REG_FIFO_TX_BASE_ADDR, 0);
   spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 0);
   // LoRa modem config
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_1,
-                 (0b011 << 4 /*20.8kHz bandwidth*/) |
+                 (0b001 << 4 /*10.4kHz bandwidth*/) |
                      (0b010 << 1 /*4/6 coding rate*/) |
                      (0 << 0 /*explicit header*/));
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_2,
-                 (7 << 4 /*spreading factor 128 chips/symbol*/) |
+                 (8 << 4 /*spreading factor 256 chips/symbol*/) |
                      (1 << 2 /*CRC on*/) | (0 << 0 /*RX timeout MSB*/));
   spi_write_reg8(self->spi, SX1278_REG_SYMB_TIMEOUT_LSB,
                  0x64 /*RX timeout LSB*/);
@@ -60,14 +62,15 @@ void sx1278_init(sx1278_t* self,
                  (0 << 3 /*disable low data rate optimization*/) |
                      (0 << 2 /*disable AGC*/));
   // preamble length
-  spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_MSB, 0);
-  spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_LSB, 8);
+  uint16_t preamble_length = 8;
+  spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_MSB, preamble_length >> 8);
+  spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_LSB, preamble_length & 0xFF);
   // hop period
   spi_write_reg8(self->spi, SX1278_REG_HOP_PERIOD,
                  0 /*disable frequency hopping*/);
 
   // sync word
-  spi_write_reg8(self->spi, SX1278_REG_SYNC_WORD, 0x12);
+  spi_write_reg8(self->spi, SX1278_REG_SYNC_WORD, 0x91);
 
   sx1278_set_mode(self, (1 << 7 /*LoRa Mode*/) | (0b001 << 0 /*standby*/));
 }

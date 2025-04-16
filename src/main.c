@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
   }*/
 
   sx1278_t lora;
-  sx1278_init(&lora, &spi, &gpio_ctl, 433000000);
+  sx1278_init(&lora, &spi, &gpio_ctl, 433031200);
 
   printf("SX1278 version: 0x%X\n", sx1278_get_version(&lora));
 
