@@ -49,16 +49,17 @@ int main(int argc, char** argv) {
   printf("SX1278 version: 0x%X\n", sx1278_get_version(&lora));
 
   for (uint8_t i = 0; i < 4; i++) {
-    if (sx1278_send(&lora, (uint8_t*)"abcdef", 6)) {
+    uint8_t msg_buf[] = "abcdef";
+    if (sx1278_send(&lora, (uint8_t*)msg_buf, 6)) {
       printf("successfully sent packet!\n");
     } else {
       fprintf(stderr, "timeout reached when sending packet\n");
     }
 
-    /*struct timespec delay_time;*/
-    /*delay_time.tv_sec = 0;*/
-    /*delay_time.tv_nsec = 100000000;  // 100ms*/
-    /*nanosleep(&delay_time, NULL);*/
+    struct timespec delay_time;
+    delay_time.tv_sec = 0;
+    delay_time.tv_nsec = 500000000;  // 500ms
+    nanosleep(&delay_time, NULL);
   }
 
   int tun_fd = tun_alloc("ip-over-lora");

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -51,16 +52,18 @@ void spi_write_reg8(spi_t* self, uint8_t addr, uint8_t val) {
 }
 
 void spi_write_bulk(spi_t* self, uint8_t addr, uint8_t* data, uint8_t len) {
-  struct spi_ioc_transfer xfer[2] = {0};
-  xfer[0].tx_buf = (uint64_t)(&addr);
+  struct spi_ioc_transfer xfer[1] = {0};
+  uint8_t* buffer = malloc(len + 1);
+  buffer[0] = addr;
+  memcpy(buffer, data + 1, len);
+  xfer[0].tx_buf = (uint64_t)buffer;
   xfer[0].rx_buf = 0;
-  xfer[0].len = 1;
-  xfer[1].tx_buf = (uint64_t)data;
-  xfer[1].rx_buf = 0;
-  xfer[1].len = len;
+  xfer[0].len = len + 1;
 
   IOCTL_WITH_ERR_HANDLING(self->fd, SPI_IOC_MESSAGE(1), xfer,
                           "couldn't perform SPI register write");
+
+  free(buffer);
 }
 
 uint8_t spi_read_reg8(spi_t* self, uint8_t addr) {

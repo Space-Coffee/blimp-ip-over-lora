@@ -33,13 +33,13 @@ void sx1278_init(sx1278_t* self,
   spi_write_reg8(self->spi, SX1278_REG_FR_LSB, (uint8_t)rf_freq_reg);
 
   // PA config
-  spi_write_reg8(
-      self->spi, SX1278_REG_PA_CONFIG,
-      (1 << 7 /*PA output = PA_BOOST*/) | (15 << 0 /*Pout = 17dBm*/));
+  spi_write_reg8(self->spi, SX1278_REG_PA_CONFIG,
+                 (1 << 7 /*PA output = PA_BOOST*/) |
+                     (0 << 4 /*Pmax = 10.8dBm*/) | (2 << 0 /*Pout = 4dBm*/));
   // OCP - overload current protection
   spi_write_reg8(
       self->spi, SX1278_REG_OCP,
-      (1 << 5 /*OCP on*/) | (17 << 0 /*140mA*/));  // TODO: adjust max current
+      (1 << 5 /*OCP on*/) | (9 << 0 /*90mA*/));  // TODO: adjust max current
   // LNA
   spi_write_reg8(self->spi, SX1278_REG_LNA,
                  (0b110 << 5 /*G6 - minimum gain*/) |
@@ -47,22 +47,23 @@ void sx1278_init(sx1278_t* self,
 
   // setup FIFO
   spi_write_reg8(self->spi, SX1278_REG_FIFO_TX_BASE_ADDR, 0);
-  spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 0);
+  spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 128);
   // LoRa modem config
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_1,
-                 (0b001 << 4 /*10.4kHz bandwidth*/) |
+                 (0b0111 << 4 /*125kHz bandwidth*/) |
                      (0b010 << 1 /*4/6 coding rate*/) |
                      (0 << 0 /*explicit header*/));
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_2,
-                 (8 << 4 /*spreading factor 256 chips/symbol*/) |
-                     (1 << 2 /*CRC on*/) | (0 << 0 /*RX timeout MSB*/));
+                 (9 << 4 /*spreading factor 512 chips/symbol*/) |
+                     (0 << 3 /*Non-continuous TX mode*/) |
+                     (0 << 2 /*CRC off*/) | (0 << 0 /*RX timeout MSB*/));
   spi_write_reg8(self->spi, SX1278_REG_SYMB_TIMEOUT_LSB,
                  0x64 /*RX timeout LSB*/);
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_3,
                  (0 << 3 /*disable low data rate optimization*/) |
                      (0 << 2 /*disable AGC*/));
   // preamble length
-  uint16_t preamble_length = 8;
+  uint16_t preamble_length = 64;
   spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_MSB, preamble_length >> 8);
   spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_LSB, preamble_length & 0xFF);
   // hop period
@@ -116,8 +117,8 @@ void sx1278_set_mode(sx1278_t* self, uint8_t mode) {
 bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
   spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
 
-  spi_write_bulk(self->spi, SX1278_REG_FIFO, data, len);
   spi_write_reg8(self->spi, SX1278_REG_PAYLOAD_LENGTH, len);
+  spi_write_bulk(self->spi, SX1278_REG_FIFO, data, len);
 
   // Clear the IRQ flag
   spi_write_reg8(self->spi, SX1278_REG_IRQ_FLAGS, 0xFF);
