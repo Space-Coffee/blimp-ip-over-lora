@@ -29,7 +29,7 @@ void spi_init(spi_t* self, const char* dev_path) {
   buf8 = 8;
   IOCTL_WITH_ERR_HANDLING(self->fd, SPI_IOC_WR_BITS_PER_WORD, &buf8,
                           "couldn't set SPI bit count per word\n");
-  uint32_t buf32 = 1000000;
+  uint32_t buf32 = 100000;
   IOCTL_WITH_ERR_HANDLING(self->fd, SPI_IOC_WR_MAX_SPEED_HZ, &buf32,
                           "couldn't set SPI max speed\n");
 }
@@ -40,7 +40,8 @@ void spi_deinit(spi_t* self) {
 }
 
 void spi_write_reg8(spi_t* self, uint8_t addr, uint8_t val) {
-  struct spi_ioc_transfer xfer[1] = {0};
+  struct spi_ioc_transfer xfer[1];
+  memset(xfer, 0, sizeof(xfer));
   uint8_t buf[2] = {addr, val};
   buf[0] |= 0x80;  // set the address MSB to indicate write, as opposed to read
   xfer[0].tx_buf = (uint64_t)buf;
@@ -52,10 +53,11 @@ void spi_write_reg8(spi_t* self, uint8_t addr, uint8_t val) {
 }
 
 void spi_write_bulk(spi_t* self, uint8_t addr, uint8_t* data, uint8_t len) {
-  struct spi_ioc_transfer xfer[1] = {0};
-  uint8_t* buffer = malloc(len + 1);
-  buffer[0] = addr;
-  memcpy(buffer, data + 1, len);
+  struct spi_ioc_transfer xfer[1];
+  memset(xfer, 0, sizeof(xfer));
+  uint8_t* buffer = malloc((size_t)(len + 1));
+  buffer[0] = addr | 0x80;
+  memcpy(buffer + 1, data, (size_t)len);
   xfer[0].tx_buf = (uint64_t)buffer;
   xfer[0].rx_buf = 0;
   xfer[0].len = len + 1;
@@ -67,7 +69,8 @@ void spi_write_bulk(spi_t* self, uint8_t addr, uint8_t* data, uint8_t len) {
 }
 
 uint8_t spi_read_reg8(spi_t* self, uint8_t addr) {
-  struct spi_ioc_transfer xfer[2] = {0};
+  struct spi_ioc_transfer xfer[2];
+  memset(xfer, 0, sizeof(xfer));
   uint8_t val;
   // don't set the address MSB to indicate read, as opposed to write
   xfer[0].tx_buf = (uint64_t)(&addr);

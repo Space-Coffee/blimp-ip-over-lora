@@ -48,24 +48,32 @@ void sx1278_init(sx1278_t* self,
   // setup FIFO
   spi_write_reg8(self->spi, SX1278_REG_FIFO_TX_BASE_ADDR, 0);
   spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 128);
+
   // LoRa modem config
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_1,
                  (0b0111 << 4 /*125kHz bandwidth*/) |
-                     (0b010 << 1 /*4/6 coding rate*/) |
+                     (0b100 << 1 /*4/8 coding rate*/) |
                      (0 << 0 /*explicit header*/));
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_2,
-                 (9 << 4 /*spreading factor 512 chips/symbol*/) |
+                 (9 << 4 /*spreading factor 9 (512 chips/symbol)*/) |
                      (0 << 3 /*Non-continuous TX mode*/) |
-                     (0 << 2 /*CRC off*/) | (0 << 0 /*RX timeout MSB*/));
+                     (1 << 2 /*CRC enable*/) | (0 << 0 /*RX timeout MSB*/));
   spi_write_reg8(self->spi, SX1278_REG_SYMB_TIMEOUT_LSB,
                  0x64 /*RX timeout LSB*/);
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_3,
                  (0 << 3 /*disable low data rate optimization*/) |
                      (0 << 2 /*disable AGC*/));
+
+  // detection
+  spi_write_reg8(self->spi, SX1278_REG_DETECT_OPTIMIZE,
+                 (0x3 << 0 /*SF7-SF12*/));
+  spi_write_reg8(self->spi, SX1278_REG_DETECTION_THRESHOLD, 0xA /*SF7-SF12*/);
+
   // preamble length
   uint16_t preamble_length = 64;
   spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_MSB, preamble_length >> 8);
   spi_write_reg8(self->spi, SX1278_REG_PREAMBLE_LSB, preamble_length & 0xFF);
+
   // hop period
   spi_write_reg8(self->spi, SX1278_REG_HOP_PERIOD,
                  0 /*disable frequency hopping*/);
@@ -115,9 +123,9 @@ void sx1278_set_mode(sx1278_t* self, uint8_t mode) {
 }
 
 bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
-  spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
-
   spi_write_reg8(self->spi, SX1278_REG_PAYLOAD_LENGTH, len);
+
+  spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR, 0);
   spi_write_bulk(self->spi, SX1278_REG_FIFO, data, len);
 
   // Clear the IRQ flag
