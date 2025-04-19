@@ -162,3 +162,8 @@ bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
 
   return counter > 0;
 }
+
+void sx1278_receive(sx1278_t* self) {
+  sx1278_set_mode(self,
+                  (1 << 7 /*LoRa mode*/) | (0b101 << 0 /*RX continuous*/));
+}
