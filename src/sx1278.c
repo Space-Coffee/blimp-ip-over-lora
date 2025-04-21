@@ -169,7 +169,7 @@ void sx1278_receive(sx1278_t* self) {
                   (1 << 7 /*LoRa mode*/) | (0b101 << 0 /*RX continuous*/));
 }
 
-bool sx1278_get_received(sx1278_t* self, uint8_t** result_ptr) {
+uint8_t sx1278_get_received(sx1278_t* self, uint8_t** result_ptr) {
   uint8_t irq_flags = spi_read_reg8(self->spi, SX1278_REG_IRQ_FLAGS);
   spi_write_reg8(self->spi, SX1278_REG_IRQ_FLAGS,
                  0xFF);  // Clear all the IRQ flags
@@ -185,8 +185,8 @@ bool sx1278_get_received(sx1278_t* self, uint8_t** result_ptr) {
                      spi_read_reg8(self->spi, SX1278_REG_FIFO_RX_CURRENT_ADDR));
       // Read the payload
       spi_read_bulk(self->spi, SX1278_REG_FIFO, packet_len, *result_ptr);
-      return true;
+      return packet_len;
     }
   }
-  return false;
+  return 0;
 }

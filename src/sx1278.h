@@ -69,5 +69,6 @@ extern uint8_t sx1278_get_version(sx1278_t* self);
 extern void sx1278_set_mode(sx1278_t* self, uint8_t mode);
 extern bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len);
 extern void sx1278_receive(sx1278_t* self);
+extern uint8_t sx1278_get_received(sx1278_t* self, uint8_t** result_ptr);
 
 #endif
