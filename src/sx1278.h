@@ -53,15 +53,27 @@
 #define SX1278_REG_VERSION 0x42
 
 typedef struct {
+  uint64_t rf_freq;
+  uint16_t pa_max_power_dbm_x10;
+  uint16_t pa_out_power_dbm_x10;
+  uint16_t ocp_max_current_ma;
+  // Setting to 0 will activate AGC (Automatic Gain Control).
+  // Otherwise (range [1..6]), lower values is higher gain.
+  uint8_t lna_gain;
+  bool lna_boost_hf;
+} sx1278_config_t;
+
+typedef struct {
   spi_t* spi;
   gpio_ctl_t* gpio;
   bool dev_detected;
+  sx1278_config_t config;
 } sx1278_t;
 
 extern void sx1278_init(sx1278_t* self,
                         spi_t* spi,
                         gpio_ctl_t* gpio,
-                        uint64_t rf_freq);
+                        sx1278_config_t config);
 extern void sx1278_deinit(sx1278_t* self);
 extern void sx1278_reset(sx1278_t* self);
 extern bool sx1278_check_device(sx1278_t* self);

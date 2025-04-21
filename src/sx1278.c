@@ -9,9 +9,10 @@
 void sx1278_init(sx1278_t* self,
                  spi_t* spi,
                  gpio_ctl_t* gpio,
-                 uint64_t rf_freq) {
+                 sx1278_config_t config) {
   self->spi = spi;
   self->gpio = gpio;
+  self->config = config;
 
   sx1278_reset(self);
 
@@ -26,24 +27,39 @@ void sx1278_init(sx1278_t* self,
 
   // frequency
   uint64_t rf_freq_reg =
-      (rf_freq << 19) /
+      (config.rf_freq << 19) /
       32000000;  // TODO: verify if 32MHz is correct oscillator frequency
   spi_write_reg8(self->spi, SX1278_REG_FR_MSB, (uint8_t)(rf_freq_reg >> 16));
   spi_write_reg8(self->spi, SX1278_REG_FR_MID, (uint8_t)(rf_freq_reg >> 8));
   spi_write_reg8(self->spi, SX1278_REG_FR_LSB, (uint8_t)rf_freq_reg);
 
   // PA config
+  uint8_t pa_max_power_reg = (config.pa_max_power_dbm_x10 - 108) / 6;
+  fprintf(stderr, "pa_max_power_reg = %hhd\n", pa_max_power_reg);
+  uint8_t pa_out_power_reg = (config.pa_out_power_dbm_x10 - 20) / 10;
+  fprintf(stderr, "pa_out_power_reg = %hhd\n", pa_out_power_reg);
   spi_write_reg8(self->spi, SX1278_REG_PA_CONFIG,
                  (1 << 7 /*PA output = PA_BOOST*/) |
-                     (0 << 4 /*Pmax = 10.8dBm*/) | (2 << 0 /*Pout = 4dBm*/));
+                     (pa_max_power_reg << 4 /*Pmax*/) |
+                     (pa_out_power_reg << 0 /*Pout*/));
   // OCP - overload current protection
+  uint8_t ocp_trim_reg;
+  if (config.ocp_max_current_ma <= 120) {
+    ocp_trim_reg = (config.ocp_max_current_ma - 45) / 5;
+  } else if (config.ocp_max_current_ma <= 240) {
+    ocp_trim_reg = (config.ocp_max_current_ma + 30) / 10;
+  } else {
+    ocp_trim_reg = 27;
+  }
   spi_write_reg8(
       self->spi, SX1278_REG_OCP,
-      (1 << 5 /*OCP on*/) | (9 << 0 /*90mA*/));  // TODO: adjust max current
+      (1 << 5 /*OCP on*/) |
+          (ocp_trim_reg << 0 /*OCP trim*/));  // TODO: adjust max current
   // LNA
-  spi_write_reg8(self->spi, SX1278_REG_LNA,
-                 (0b110 << 5 /*G6 - minimum gain*/) |
-                     (0b00 << 0 /*high freq. LNA boost off*/));
+  spi_write_reg8(
+      self->spi, SX1278_REG_LNA,
+      ((config.lna_gain == 0 ? 1 : config.lna_gain) << 5 /*LNA gain*/) |
+          ((config.lna_boost_hf ? 0b11 : 0b00) << 0 /*high freq. LNA boost*/));
 
   // setup FIFO
   spi_write_reg8(self->spi, SX1278_REG_FIFO_TX_BASE_ADDR, 0);
@@ -62,7 +78,7 @@ void sx1278_init(sx1278_t* self,
                  0x64 /*RX timeout LSB*/);
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_3,
                  (0 << 3 /*disable low data rate optimization*/) |
-                     (0 << 2 /*disable AGC*/));
+                     ((config.lna_gain == 0) << 2 /*AGC*/));
 
   // detection
   spi_write_reg8(self->spi, SX1278_REG_DETECT_OPTIMIZE,

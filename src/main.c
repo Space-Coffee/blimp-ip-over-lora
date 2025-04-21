@@ -43,8 +43,14 @@ int main(int argc, char** argv) {
     nanosleep(&delay_time, NULL);
   }*/
 
+  sx1278_config_t lora_config = {.rf_freq = 433031200,
+                                 .pa_max_power_dbm_x10 = 108,
+                                 .pa_out_power_dbm_x10 = 40,
+                                 .ocp_max_current_ma = 90,
+                                 .lna_gain = 1,
+                                 .lna_boost_hf = false};
   sx1278_t lora;
-  sx1278_init(&lora, &spi, &gpio_ctl, 433031200);
+  sx1278_init(&lora, &spi, &gpio_ctl, lora_config);
 
   printf("SX1278 version: 0x%X\n", sx1278_get_version(&lora));
 
