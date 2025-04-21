@@ -24,5 +24,9 @@ extern void spi_write_bulk(spi_t* self,
                            uint8_t* data,
                            uint8_t len);
 extern uint8_t spi_read_reg8(spi_t* self, uint8_t addr);
+extern void spi_read_bulk(spi_t* self,
+                          uint8_t addr,
+                          uint8_t len,
+                          uint8_t* result);
 
 #endif

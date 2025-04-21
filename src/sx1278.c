@@ -47,7 +47,7 @@ void sx1278_init(sx1278_t* self,
 
   // setup FIFO
   spi_write_reg8(self->spi, SX1278_REG_FIFO_TX_BASE_ADDR, 0);
-  spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 128);
+  spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_BASE_ADDR, 0);
 
   // LoRa modem config
   spi_write_reg8(self->spi, SX1278_REG_MODEM_CONFIG_1,
@@ -164,6 +164,29 @@ bool sx1278_send(sx1278_t* self, uint8_t* data, uint8_t len) {
 }
 
 void sx1278_receive(sx1278_t* self) {
+  spi_write_reg8(self->spi, SX1278_REG_FIFO_RX_CURRENT_ADDR, 0);
   sx1278_set_mode(self,
                   (1 << 7 /*LoRa mode*/) | (0b101 << 0 /*RX continuous*/));
+}
+
+bool sx1278_get_received(sx1278_t* self, uint8_t** result_ptr) {
+  uint8_t irq_flags = spi_read_reg8(self->spi, SX1278_REG_IRQ_FLAGS);
+  spi_write_reg8(self->spi, SX1278_REG_IRQ_FLAGS,
+                 0xFF);  // Clear all the IRQ flags
+  if (irq_flags & (1 << 6 /*RX done*/)) {
+    if (irq_flags & (1 << 5 /*CRC error*/)) {
+      fprintf(stderr, "Received packet with CRC error!\n");
+    } else {
+      // Get packet length and allocate buffer for it
+      uint8_t packet_len = spi_read_reg8(self->spi, SX1278_REG_RX_NB_BYTES);
+      *result_ptr = malloc(packet_len);
+      // Set FIFO read pointer to start of the packet payload
+      spi_write_reg8(self->spi, SX1278_REG_FIFO_ADDR_PTR,
+                     spi_read_reg8(self->spi, SX1278_REG_FIFO_RX_CURRENT_ADDR));
+      // Read the payload
+      spi_read_bulk(self->spi, SX1278_REG_FIFO, packet_len, *result_ptr);
+      return true;
+    }
+  }
+  return false;
 }

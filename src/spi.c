@@ -85,3 +85,19 @@ uint8_t spi_read_reg8(spi_t* self, uint8_t addr) {
 
   return val;
 }
+
+void spi_read_bulk(spi_t* self, uint8_t addr, uint8_t len, uint8_t* result) {
+  struct spi_ioc_transfer xfer[2];
+  memset(xfer, 0, sizeof(xfer));
+  uint8_t val;
+  // don't set the address MSB to indicate read, as opposed to write
+  xfer[0].tx_buf = (uint64_t)(&addr);
+  xfer[0].rx_buf = 0;
+  xfer[0].len = 1;
+  xfer[1].tx_buf = 0;
+  xfer[1].rx_buf = (uint64_t)result;
+  xfer[1].len = len;
+
+  IOCTL_WITH_ERR_HANDLING(self->fd, SPI_IOC_MESSAGE(2), xfer,
+                          "couldn't perform SPI register read");
+}
