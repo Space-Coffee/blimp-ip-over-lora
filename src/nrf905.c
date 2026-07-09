@@ -26,9 +26,13 @@ void nrf905_spi_write_configs(nrf905_t* self,
   spi_transact(self->spi, len + 1, msg_tx_buf, NULL);
 }
 
-void nrf905_init(nrf905_t* self, spi_t* spi, gpio_ctl_t* gpio) {
+void nrf905_init(nrf905_t* self,
+                 spi_t* spi,
+                 gpio_ctl_t* gpio,
+                 nrf905_pins_t pins) {
   self->spi = spi;
   self->gpio = gpio;
+  self->pins = pins;
 
   uint16_t channel_num = 108;
   uint8_t auto_retran = 0;
@@ -61,4 +65,24 @@ void nrf905_init(nrf905_t* self, spi_t* spi, gpio_ctl_t* gpio) {
   configs[9] = (crc_mode << 7) | (crc_en << 6) | (cryst_freq << 3) |
                (up_clk_en << 2) | up_clk_freq;
   nrf905_spi_write_configs(self, 0, configs, 10);
+}
+
+void nrf905_deinit(nrf905_t* self) {}
+
+void nrf905_transmit(nrf905_t* self, uint32_t dest_addr, uint8_t* payload) {
+  uint8_t msg_buf[33];
+
+  // Set TX address
+  msg_buf[0] = 0b00100010;
+  msg_buf[1] = (uint8_t)dest_addr;
+  msg_buf[2] = (uint8_t)(dest_addr >> 8);
+  msg_buf[3] = (uint8_t)(dest_addr >> 16);
+  msg_buf[4] = (uint8_t)(dest_addr >> 24);
+  spi_transact(self->spi, 5, msg_buf, NULL);
+
+  // Send payload
+  msg_buf[0] = 0b00100000;
+  memcpy(msg_buf + 1, payload, 32);
+
+  // TODO: Set GPIOs
 }
