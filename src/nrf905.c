@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -84,6 +85,7 @@ void nrf905_transmit(nrf905_t* self, uint32_t dest_addr, uint8_t* payload) {
   // Send payload
   msg_buf[0] = 0b00100000;
   memcpy(msg_buf + 1, payload, 32);
+  spi_transact(self->spi, 33, msg_buf, NULL);
 
   // Set TRX_CE and TX_EN
   uint64_t gpio_val =
@@ -108,4 +110,37 @@ void nrf905_transmit(nrf905_t* self, uint32_t dest_addr, uint8_t* payload) {
   gpio_val = (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
   gpio_mask = (0 << self->pins.trx_ce_pin) | (0 << self->pins.tx_en_pin);
   gpio_set(self->gpio, gpio_val, gpio_mask);
+}
+
+void nrf905_receive(nrf905_t* self) {
+  // RX mode
+  uint64_t gpio_val =
+      (1 << self->pins.trx_ce_pin) | (0 << self->pins.tx_en_pin);
+  uint64_t gpio_mask =
+      (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+  gpio_set(self->gpio, gpio_val, gpio_mask);
+}
+
+uint8_t nrf905_get_received(nrf905_t* self, uint8_t** result_ptr) {
+  uint64_t gpio_mask =
+      (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+  uint64_t gpio_val = gpio_get(self->gpio, gpio_mask);
+
+  if (gpio_val & (1 << self->pins.dr_pin)) {
+    // Stand-by mode
+    gpio_val = (0 << self->pins.trx_ce_pin) | (0 << self->pins.tx_en_pin);
+    gpio_mask = (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+    gpio_set(self->gpio, gpio_val, gpio_mask);
+
+    uint8_t tx_msg_buf[33];
+    uint8_t rx_msg_buf[33];
+    tx_msg_buf[0] = 0b00100100;
+    memset(tx_msg_buf + 1, 0, 32);
+    spi_transact(self->spi, 33, tx_msg_buf, rx_msg_buf);
+
+    *result_ptr = malloc(32);
+    memcpy(*result_ptr, rx_msg_buf + 1, 32);
+    return 32;
+  }
+  return 0;
 }

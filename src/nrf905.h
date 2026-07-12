@@ -26,5 +26,7 @@ extern void nrf905_deinit(nrf905_t* self);
 extern void nrf905_transmit(nrf905_t* self,
                             uint32_t dest_addr,
                             uint8_t* payload);
+extern void nrf905_receive(nrf905_t* self);
+extern uint8_t nrf905_get_received(nrf905_t* self, uint8_t** result_ptr);
 
 #endif
