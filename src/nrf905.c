@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include "gpio.h"
 #include "nrf905.h"
@@ -84,5 +85,27 @@ void nrf905_transmit(nrf905_t* self, uint32_t dest_addr, uint8_t* payload) {
   msg_buf[0] = 0b00100000;
   memcpy(msg_buf + 1, payload, 32);
 
-  // TODO: Set GPIOs
+  // Set TRX_CE and TX_EN
+  uint64_t gpio_val =
+      (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+  uint64_t gpio_mask =
+      (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+  gpio_set(self->gpio, gpio_val, gpio_mask);
+
+  // Wait for DR
+  gpio_mask = 1 << self->pins.dr_pin;
+  do {
+    struct timespec ts = {
+        .tv_sec = 0,
+        .tv_nsec = 50000000,
+    };
+    nanosleep(&ts, NULL);
+
+    gpio_val = gpio_get(self->gpio, gpio_mask);
+  } while ((gpio_val & (1 << self->pins.dr_pin)) == 0);
+
+  // Go back to standby
+  gpio_val = (1 << self->pins.trx_ce_pin) | (1 << self->pins.tx_en_pin);
+  gpio_mask = (0 << self->pins.trx_ce_pin) | (0 << self->pins.tx_en_pin);
+  gpio_set(self->gpio, gpio_val, gpio_mask);
 }

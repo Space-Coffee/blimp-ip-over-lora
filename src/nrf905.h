@@ -8,7 +8,7 @@
 
 typedef struct {
   uint32_t tx_en_pin;
-  uint32_t trw_ce_pin;
+  uint32_t trx_ce_pin;
   uint32_t dr_pin;  // Data ready
 } nrf905_pins_t;
 
