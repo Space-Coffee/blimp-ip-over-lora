@@ -101,3 +101,14 @@ void spi_read_bulk(spi_t* self, uint8_t addr, uint8_t len, uint8_t* result) {
   IOCTL_WITH_ERR_HANDLING(self->fd, SPI_IOC_MESSAGE(2), xfer,
                           "couldn't perform SPI register read");
 }
+
+void spi_transact(spi_t* self,
+                  uint32_t len,
+                  uint8_t* data_tx,
+                  uint8_t* data_rx) {
+  struct spi_ioc_transfer xfer;
+  memset(&xfer, 0, sizeof(xfer));
+  xfer.tx_buf = (uint64_t)data_tx;
+  xfer.rx_buf = (uint64_t)data_rx;
+  xfer.len = len;
+}

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.10)
 
 project(blimp-ip-over-lora)
 
@@ -7,5 +7,6 @@ add_executable(blimp-ip-over-lora
 	src/spi.c
 	src/gpio.c
 	src/sx1278.c
+	src/nrf905.c
 	src/tun.c)
 
