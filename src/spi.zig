@@ -1,9 +1,10 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("fcntl.h");
-    @cInclude("linux/spi/spi.h");
-    @cInclude("linux/spi/spidev.h");
-});
+// const c = @cImport({
+//     @cInclude("fcntl.h");
+//     @cInclude("linux/spi/spi.h");
+//     @cInclude("linux/spi/spidev.h");
+// });
+const c = @import("c");
 
 fn ioctl_checked(fd: std.os.linux.fd_t, request: u32, arg: usize, err_msg: []const u8) !usize {
     const result = std.os.linux.ioctl(fd, request, arg);
