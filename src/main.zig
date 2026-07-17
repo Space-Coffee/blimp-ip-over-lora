@@ -9,6 +9,6 @@ pub fn main(init: std.process.Init) !void {
     try spi_dev.write_reg8(0b10110001, 0x00);
 
     const gpio_dev_path: [:0]const u8 = "/dev/gpiochip0";
-    const gpio_ctrl = try gpio.GpioCtrl.init(init.io, gpio_dev_path);
+    const gpio_ctrl = try gpio.GpioCtrl.init(init.io, gpio_dev_path, &.{}, &.{});
     _ = gpio_ctrl;
 }
