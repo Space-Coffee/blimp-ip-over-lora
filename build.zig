@@ -17,7 +17,11 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     mod.addImport("c", c_mod);
-    const exe = b.addExecutable(.{ .name = "blimp-ip-over-lora", .root_module = mod });
+    const exe = b.addExecutable(.{
+        .name = "blimp-ip-over-lora",
+        .root_module = mod,
+        .use_llvm = true, // https://ziggit.dev/t/linker-error-when-building-zig-from-source/14394/5
+    });
 
     b.installArtifact(exe);
 }

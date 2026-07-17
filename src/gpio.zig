@@ -1,19 +1,20 @@
 const std = @import("std");
 const c = @import("c");
+const misc = @import("misc.zig");
 
-const spi = @import("spi.zig");
 const gpio_consumer_name = "blimp-ip-over-lora";
 
-const GpioCtrl = struct {
-    fd: i32,
+pub const GpioCtrl = struct {
+    dev_file: std.Io.File,
 
-    fn init(dev_path: [:0]u8) !@This() {
-        const fd: i32 = std.os.linux.open(dev_path);
-        if (fd < 0) {
-            std.log.err("couldn't open GPIO device {s}, errno = {d}", .{
-                dev_path,
-                std.posix.errno,
-            });
-        }
+    pub fn init(io: std.Io, dev_path: []const u8) !@This() {
+        // const fd: i32 = @intCast(std.os.linux.open(dev_path, .{}, c.O_RDWR));
+        const dev_file = try std.Io.Dir.openFileAbsolute(io, dev_path, .{ .mode = .read_write });
+        const fd = dev_file.handle;
+        _ = fd;
+
+        return .{
+            .dev_file = dev_file,
+        };
     }
 };
