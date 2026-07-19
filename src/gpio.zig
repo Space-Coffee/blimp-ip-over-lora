@@ -90,10 +90,10 @@ pub const GpioCtrl = struct {
 
     pub fn deinit(self: *const GpioCtrl, io: std.Io) void {
         if (self.out_lines_fd >= 0) {
-            std.c.close(self.out_lines_fd);
+            _ = std.c.close(self.out_lines_fd);
         }
         if (self.in_lines_fd >= 0) {
-            std.c.close(self.in_lines_fd);
+            _ = std.c.close(self.in_lines_fd);
         }
         self.dev_file.close(io);
     }

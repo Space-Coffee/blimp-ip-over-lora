@@ -1,6 +1,7 @@
 const std = @import("std");
 const spi = @import("spi.zig");
 const gpio = @import("gpio.zig");
+const tun = @import("tun.zig");
 
 pub fn main(init: std.process.Init) !void {
     const spi_dev_path: [:0]const u8 = "/dev/spidev0.0";
@@ -10,5 +11,8 @@ pub fn main(init: std.process.Init) !void {
 
     const gpio_dev_path: [:0]const u8 = "/dev/gpiochip0";
     const gpio_ctrl = try gpio.GpioCtrl.init(init.io, gpio_dev_path, &.{}, &.{});
-    _ = gpio_ctrl;
+    defer gpio_ctrl.deinit(init.io);
+
+    const tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
+    defer tun_dev.deinit(init.io, init.gpa);
 }
