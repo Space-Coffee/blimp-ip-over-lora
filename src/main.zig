@@ -18,14 +18,17 @@ pub fn main(init: std.process.Init) !void {
     defer tun_dev.deinit(init.io, init.gpa);
 
     var radio_iface = radio.Radio{
-        .impl = undefined,
+        .gpa = init.gpa,
         .vt = .{
-            .transmit_fn = radio.Radio.VTable.failing_transmit,
-            .receive_fn = radio.Radio.VTable.failing_receive,
-            .get_received_fn = radio.Radio.VTable.failing_get_received,
+            .transmit_fn = radio.Radio.VTable.failingTransmit,
+            .receive_fn = radio.Radio.VTable.failingReceive,
+            .get_received_fn = radio.Radio.VTable.failingGetReceived,
         },
+        .impl = undefined,
         .payload_len_min = 32,
         .payload_len_max = 32,
     };
-    try radio_iface.transmit("Hello world!");
+    // try radio_iface.transmit("Hello world!");
+    try radio_iface.sent_packet(try init.gpa.dupe(u8, "Hello world!"));
+    try radio_iface.update(init.io);
 }
