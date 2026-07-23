@@ -2,6 +2,7 @@ const std = @import("std");
 const spi = @import("spi.zig");
 const gpio = @import("gpio.zig");
 const tun = @import("tun.zig");
+const radio = @import("radio.zig");
 
 pub fn main(init: std.process.Init) !void {
     const spi_dev_path: [:0]const u8 = "/dev/spidev0.0";
@@ -15,4 +16,16 @@ pub fn main(init: std.process.Init) !void {
 
     const tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
     defer tun_dev.deinit(init.io, init.gpa);
+
+    var radio_iface = radio.Radio{
+        .impl = undefined,
+        .vt = .{
+            .transmit_fn = radio.Radio.VTable.failing_transmit,
+            .receive_fn = radio.Radio.VTable.failing_receive,
+            .get_received_fn = radio.Radio.VTable.failing_get_received,
+        },
+        .payload_len_min = 32,
+        .payload_len_max = 32,
+    };
+    try radio_iface.transmit("Hello world!");
 }
