@@ -76,6 +76,15 @@ pub const Radio = struct {
         };
     }
 
+    pub fn deinit(self: *Radio) void {
+        var egress_queue_iter = self.egress_queue.iterator();
+        while (egress_queue_iter.next()) |msg| {
+            self.gpa.free(msg);
+        }
+        self.egress_queue.deinit(self.gpa);
+        self.ingress_payload_buf.deinit(self.gpa);
+    }
+
     pub fn sendMessage(self: *Radio, data: []const u8) !void {
         try self.egress_queue.pushBack(self.gpa, data);
     }

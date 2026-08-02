@@ -35,6 +35,7 @@ pub const Tun = struct {
             break :name_has_null_blk false;
         };
         var assigned_name: []const u8 = undefined;
+        errdefer gpa.free(assigned_name);
         if (name_has_null) {
             assigned_name = try gpa.dupe(u8, ifr.ifr_ifrn.ifrn_name[0..std.mem.findSentinel(u8, 0, @ptrCast(&ifr.ifr_ifrn.ifrn_name))]);
         } else {
@@ -46,7 +47,7 @@ pub const Tun = struct {
             .ip4 = .loopback(1234),
         }).bind(
             io,
-            .{ .mode = .dgram, .protocol = .ipip },
+            .{ .mode = .dgram, .protocol = .udp },
         );
 
         // Address

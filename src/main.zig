@@ -28,6 +28,7 @@ pub fn main(init: std.process.Init) !void {
         .packet_len_min = 32,
         .packet_len_max = 32,
     };
+    defer radio_iface.deinit();
     // try radio_iface.transmit("Hello world!");
     try radio_iface.sendMessage(try init.gpa.dupe(u8, "Hello world!"));
     _ = try radio_iface.update(init.io);
