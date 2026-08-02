@@ -11,8 +11,8 @@ pub const Radio = struct {
     gpa: std.mem.Allocator,
     vt: VTable,
     impl: *anyopaque,
-    payload_len_min: u32,
-    payload_len_max: u32,
+    packet_len_min: u32,
+    packet_len_max: u32,
     egress_queue: std.Deque([]const u8) = .empty,
     link_state: LinkState = .unknown,
     next_egress_packet_id: u8 = 0,
@@ -47,7 +47,7 @@ pub const Radio = struct {
     };
 
     fn transmit(self: *Radio, data: []const u8) !void {
-        if (data.len < self.payload_len_min or data.len > self.payload_len_max) {
+        if (data.len < self.packet_len_min or data.len > self.packet_len_max) {
             return error.IllegalLength;
         }
         try self.vt.transmit_fn(self.impl, data);
@@ -74,26 +74,42 @@ pub const Radio = struct {
         };
     }
 
-    pub fn sent_packet(self: *Radio, data: []const u8) !void {
+    pub fn sendMessage(self: *Radio, data: []const u8) !void {
         try self.egress_queue.pushBack(self.gpa, data);
     }
 
-    pub fn chunk_and_send(self: *Radio, data: []const u8) !void {
+    pub fn chunkAndSend(self: *Radio, data: []const u8) !void {
         var remaining = data;
+        var chunks = std.ArrayList([]const u8).empty;
+        defer chunks.deinit(self.gpa);
         while (remaining.len > 0) {
             var curr_chunk: []const u8 = undefined;
-            if (remaining.len < self.payload_len_max - 4) {
+            if (remaining.len <= self.packet_len_max - 4) {
                 curr_chunk = remaining;
             } else {
-                curr_chunk = remaining[0..(self.payload_len_max - 4)];
-                remaining = remaining[(self.payload_len_max - 4)..];
+                curr_chunk = remaining[0..(self.packet_len_max - 4)];
+                remaining = remaining[(self.packet_len_max - 4)..];
             }
 
-            var msg_buf = try self.gpa.alloc(u8, self.payload_len_max + 4);
-            defer self.gpa.free(msg_buf);
-            msg_buf[0] = self.next_egress_packet_id;
-            // msg_buf[1]=
+            try chunks.append(self.gpa, curr_chunk);
         }
+
+        if (chunks.items.len > 255) {
+            return error.MessageTooLarge;
+        }
+
+        var msg_buf = try self.gpa.alloc(u8, self.packet_len_max);
+        defer self.gpa.free(msg_buf);
+        for (chunks.items, 0..) |curr_chunk, i| {
+            msg_buf[0] = self.next_egress_packet_id;
+            msg_buf[1] = @intCast(chunks.items.len);
+            msg_buf[2] = @intCast(i);
+            msg_buf[3] = @intCast(curr_chunk.len);
+            @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
+
+            try self.transmit(msg_buf[0..(curr_chunk.len + 4)]);
+        }
+
         self.next_egress_packet_id += 1;
     }
 
@@ -101,10 +117,10 @@ pub const Radio = struct {
         const now = std.Io.Timestamp.now(io, .real);
         switch (self.link_state) {
             .unknown => {
-                const first = self.egress_queue();
+                const first = self.egress_queue.front();
                 if (first) |first_nn| {
                     self.link_state = createOurTurn(io);
-                    try self.chunk_and_send(first_nn);
+                    try self.chunkAndSend(first_nn);
                 } else {
                     try self.receive();
                 }

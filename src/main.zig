@@ -25,10 +25,10 @@ pub fn main(init: std.process.Init) !void {
             .get_received_fn = radio.Radio.VTable.failingGetReceived,
         },
         .impl = undefined,
-        .payload_len_min = 32,
-        .payload_len_max = 32,
+        .packet_len_min = 32,
+        .packet_len_max = 32,
     };
     // try radio_iface.transmit("Hello world!");
-    try radio_iface.sent_packet(try init.gpa.dupe(u8, "Hello world!"));
+    try radio_iface.sendMessage(try init.gpa.dupe(u8, "Hello world!"));
     try radio_iface.update(init.io);
 }
