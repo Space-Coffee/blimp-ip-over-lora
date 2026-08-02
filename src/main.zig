@@ -30,5 +30,5 @@ pub fn main(init: std.process.Init) !void {
     };
     // try radio_iface.transmit("Hello world!");
     try radio_iface.sendMessage(try init.gpa.dupe(u8, "Hello world!"));
-    try radio_iface.update(init.io);
+    _ = try radio_iface.update(init.io);
 }
