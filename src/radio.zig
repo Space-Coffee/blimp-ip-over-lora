@@ -28,6 +28,18 @@ pub const Radio = struct {
         receive_fn: *const fn (self: *anyopaque) error{ReceiveError}!void,
         get_received_fn: *const fn (self: *anyopaque) error{ReceiveError}!?[]const u8,
 
+        pub const failing = VTable{
+            .transmit_fn = failingTransmit,
+            .receive_fn = failingReceive,
+            .get_received_fn = failingGetReceived,
+        };
+
+        pub const dummy = VTable{
+            .transmit_fn = dummyTransmit,
+            .receive_fn = dummyReceive,
+            .get_received_fn = dummyGetReceived,
+        };
+
         pub fn failingTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
             _ = .{ self, data };
             return error.TransmitError;
@@ -39,6 +51,17 @@ pub const Radio = struct {
         pub fn failingGetReceived(self: *anyopaque) error{ReceiveError}!?[]const u8 {
             _ = self;
             return error.ReceiveError;
+        }
+
+        pub fn dummyTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
+            _ = .{ self, data };
+        }
+        pub fn dummyReceive(self: *anyopaque) error{ReceiveError}!void {
+            _ = self;
+        }
+        pub fn dummyGetReceived(self: *anyopaque) error{ReceiveError}!?[]const u8 {
+            _ = self;
+            return null;
         }
     };
 
@@ -95,6 +118,7 @@ pub const Radio = struct {
             var curr_chunk: []const u8 = undefined;
             if (remaining.len <= self.packet_len_max - 4) {
                 curr_chunk = remaining;
+                break;
             } else {
                 curr_chunk = remaining[0..(self.packet_len_max - 4)];
                 remaining = remaining[(self.packet_len_max - 4)..];
@@ -192,7 +216,7 @@ pub const Radio = struct {
                     self.link_state = createTurn(io, false);
                     try self.receive();
                 } else {
-                    const first = self.egress_queue.front();
+                    const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
                         Logger.debug("We're interrupting the silence", .{});
                         self.link_state = createTurn(io, true);
@@ -205,7 +229,7 @@ pub const Radio = struct {
             .our_turn => |our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    const first = self.egress_queue.front();
+                    const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
                         try self.chunkAndSend(first_nn);
                     }

@@ -33,11 +33,7 @@ pub fn main(init: std.process.Init) !void {
 
     var radio_iface = radio.Radio{
         .gpa = init.gpa,
-        .vt = .{
-            .transmit_fn = radio.Radio.VTable.failingTransmit,
-            .receive_fn = radio.Radio.VTable.failingReceive,
-            .get_received_fn = radio.Radio.VTable.failingGetReceived,
-        },
+        .vt = .dummy,
         .impl = undefined,
         .packet_len_min = 32,
         .packet_len_max = 32,
@@ -45,5 +41,9 @@ pub fn main(init: std.process.Init) !void {
     defer radio_iface.deinit();
     // try radio_iface.transmit("Hello world!");
     try radio_iface.sendMessage(try init.gpa.dupe(u8, "Hello world!"));
-    _ = try radio_iface.update(init.io);
+
+    while (true) {
+        _ = try radio_iface.update(init.io);
+        try std.Io.sleep(init.io, .fromMilliseconds(200), .real);
+    }
 }
