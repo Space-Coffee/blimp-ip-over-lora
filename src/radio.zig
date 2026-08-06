@@ -48,6 +48,8 @@ pub const Radio = struct {
         our_turn: struct { until: std.Io.Timestamp },
     };
 
+    const Logger = std.log.scoped(.radio_link);
+
     fn transmit(self: *Radio, data: []const u8) !void {
         if (data.len < self.packet_len_min or data.len > self.packet_len_max) {
             return error.IllegalLength;
@@ -114,6 +116,13 @@ pub const Radio = struct {
             msg_buf[3] = @intCast(curr_chunk.len);
             @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
 
+            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d})", .{
+                i,
+                chunks.items.len,
+                curr_chunk.len,
+                data.len,
+            });
+
             try self.transmit(msg_buf[0..(curr_chunk.len + 4)]);
         }
 
@@ -178,12 +187,19 @@ pub const Radio = struct {
         const now = std.Io.Timestamp.now(io, .real);
         switch (self.link_state) {
             .unknown => {
-                const first = self.egress_queue.front();
-                if (first) |first_nn| {
-                    self.link_state = createTurn(io, true);
-                    try self.chunkAndSend(first_nn);
-                } else {
+                if (recv_msg) |_| {
+                    Logger.debug("They interrupted the silence", .{});
+                    self.link_state = createTurn(io, false);
                     try self.receive();
+                } else {
+                    const first = self.egress_queue.front();
+                    if (first) |first_nn| {
+                        Logger.debug("We're interrupting the silence", .{});
+                        self.link_state = createTurn(io, true);
+                        try self.chunkAndSend(first_nn);
+                    } else {
+                        try self.receive();
+                    }
                 }
             },
             .our_turn => |our_turn| {
@@ -194,6 +210,7 @@ pub const Radio = struct {
                         try self.chunkAndSend(first_nn);
                     }
                 } else {
+                    Logger.debug("We're giving the turn back to them", .{});
                     self.link_state = createTurn(io, false);
                 }
             },
@@ -203,8 +220,10 @@ pub const Radio = struct {
                     try self.receive();
                 } else {
                     if (self.egress_queue.len > 0) {
+                        Logger.debug("We're getting the turn back", .{});
                         self.link_state = createTurn(io, true);
                     } else {
+                        Logger.debug("Back to silence", .{});
                         self.link_state = .unknown;
                     }
                 }
