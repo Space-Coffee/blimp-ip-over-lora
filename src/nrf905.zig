@@ -33,6 +33,8 @@ pub const Nrf905 = struct {
         up_clk_freq: u2 = 0b11,
     };
 
+    const Logger = std.log.scoped(.nrf905);
+
     pub fn init(
         io: std.Io,
         spi_dev: *spi.Spi,
@@ -63,6 +65,8 @@ pub const Nrf905 = struct {
         };
         try new_self.spi_write_configs(0, &configs);
 
+        Logger.info("Radio nRF905 ready", .{});
+
         return new_self;
     }
 
@@ -74,6 +78,10 @@ pub const Nrf905 = struct {
         if (payload.len > 32) {
             return error.IllegalLength;
         }
+
+        Logger.debug("Transmitting a packet with length {d}", .{
+            payload.len,
+        });
 
         var msg_buf = std.mem.zeroes([33]u8);
         var trash_buf: [33]u8 = undefined;
@@ -130,6 +138,8 @@ pub const Nrf905 = struct {
             var rx_msg_buf: [33]u8 = undefined;
             tx_msg_buf[0] = 0b00100100;
             self.spi_dev.transact(tx_msg_buf, rx_msg_buf);
+
+            Logger.debug("Received a packet", .{});
 
             var result: [32]u8 = undefined;
             @memcpy(&result, rx_msg_buf[1..33]);
