@@ -134,7 +134,7 @@ pub const Spi = struct {
         var xfer = std.mem.zeroes(c.spi_ioc_transfer);
         xfer.tx_buf = @intFromPtr(&data_tx);
         xfer.rx_buf = @intFromPtr(&data_rx);
-        xfer.len = data_tx.len;
+        xfer.len = @intCast(data_tx.len);
 
         _ = try misc.ioctl_checked(
             fd,
