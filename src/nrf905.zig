@@ -84,17 +84,17 @@ pub const Nrf905 = struct {
         msg_buf[1] = @truncate(dest_addr >> 8);
         msg_buf[1] = @truncate(dest_addr >> 16);
         msg_buf[1] = @truncate(dest_addr >> 24);
-        self.spi_dev.transact(msg_buf[0..5], trash_buf[0..5]);
+        try self.spi_dev.transact(msg_buf[0..5], trash_buf[0..5]);
 
         // Send payload
         msg_buf[0] = 0b0010000;
         @memcpy(msg_buf[1..(payload.len + 1)], payload);
-        self.spi_dev.transact(&msg_buf, &trash_buf);
+        try self.spi_dev.transact(&msg_buf, &trash_buf);
 
         // Set TRX_CE and TX_EN
         var gpio_val: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
         var gpio_mask: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
-        self.gpio_ctrl.set(gpio_val, gpio_mask);
+        try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
         gpio_mask = 1 << self.pins.dr_pin;
         while (true) {
@@ -108,7 +108,34 @@ pub const Nrf905 = struct {
 
         gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
         gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
-        self.gpio_ctrl.set(gpio_val, gpio_mask);
+        try self.gpio_ctrl.set(gpio_val, gpio_mask);
+    }
+
+    pub fn receive(self: *Nrf905) !void {
+        const gpio_val: u64 = (1 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
+        const gpio_mask: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        try self.gpio_ctrl.set(gpio_val, gpio_mask);
+    }
+
+    pub fn getReceived(self: *Nrf905) !?[32]u8 {
+        var gpio_mask: u64 = (1 << self.pins.dr_pin);
+        var gpio_val = try self.gpio_ctrl.get(gpio_mask);
+
+        if (gpio_val & (1 << self.pins.dr_pin)) {
+            gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
+            gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+            try self.gpio_ctrl.set(gpio_val, gpio_mask);
+
+            var tx_msg_buf = std.mem.zeroes([33]u8);
+            var rx_msg_buf: [33]u8 = undefined;
+            tx_msg_buf[0] = 0b00100100;
+            self.spi_dev.transact(tx_msg_buf, rx_msg_buf);
+
+            var result: [32]u8 = undefined;
+            @memcpy(&result, rx_msg_buf[1..33]);
+            return result;
+        }
+        return null;
     }
 
     fn spi_read_configs(self: *const Nrf905, reg_start: u4, values: []u8) !void {
