@@ -5,6 +5,8 @@ const misc = @import("misc.zig");
 pub const Spi = struct {
     dev_file: std.Io.File,
 
+    const Logger = std.log.scoped(.spi);
+
     pub fn init(io: std.Io, dev_path: []const u8) !Spi {
         // const fd: i32 = @intCast(std.os.linux.open(dev_path, .{}, c.O_RDWR));
         const dev_file = try std.Io.Dir.openFileAbsolute(io, dev_path, .{ .mode = .read_write });
@@ -38,6 +40,8 @@ pub const Spi = struct {
             @intFromPtr(&buf32),
             "couldn't set max speed",
         );
+
+        Logger.info("SPI ready", .{});
 
         return .{
             .dev_file = dev_file,

@@ -6,6 +6,8 @@ pub const Tun = struct {
     tun_dev_file: std.Io.File,
     assigned_name: []const u8,
 
+    const Logger = std.log.scoped(.tun);
+
     pub fn init(io: std.Io, gpa: std.mem.Allocator, tun_name: []const u8) !Tun {
         const tun_dev_file = try std.Io.Dir.openFileAbsolute(
             io,
@@ -35,6 +37,7 @@ pub const Tun = struct {
             break :name_has_null_blk false;
         };
         var assigned_name: []const u8 = undefined;
+        errdefer gpa.free(assigned_name);
         if (name_has_null) {
             assigned_name = try gpa.dupe(u8, ifr.ifr_ifrn.ifrn_name[0..std.mem.findSentinel(u8, 0, @ptrCast(&ifr.ifr_ifrn.ifrn_name))]);
         } else {
@@ -46,7 +49,7 @@ pub const Tun = struct {
             .ip4 = .loopback(1234),
         }).bind(
             io,
-            .{ .mode = .dgram, .protocol = .ipip },
+            .{ .mode = .dgram, .protocol = .udp },
         );
 
         // Address
@@ -89,7 +92,7 @@ pub const Tun = struct {
             "couldn't get TUN flags",
         );
         // Apparently some of those flags don't fit in 16 bits, hence @truncate.
-        // I'm not sure what if their use then.
+        // I'm not sure what is their use then.
         ifr.ifr_ifru.ifru_flags |= @as(
             c_short,
             @truncate(c.IFF_UP | c.IFF_LOWER_UP | c.IFF_NOARP | c.IFF_MULTICAST | c.IFF_POINTOPOINT | c.IFF_RUNNING),
@@ -102,6 +105,8 @@ pub const Tun = struct {
         );
 
         socket.close(io);
+
+        Logger.info("Tun ready", .{});
 
         return .{
             .tun_dev_file = tun_dev_file,
