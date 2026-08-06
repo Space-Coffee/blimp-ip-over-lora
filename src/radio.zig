@@ -63,33 +63,29 @@ pub const Radio = struct {
         return try self.vt.get_received_fn(self.impl);
     }
 
-    fn createOurTurn(io: std.Io) LinkState {
-        return .{
-            .our_turn = .{
-                .until = std.Io.Timestamp.now(
-                    io,
-                    .real,
-                ).addDuration(
-                    .fromMilliseconds(turn_duration_ms),
-                ),
-            },
-        };
-    }
-
-    pub fn deinit(self: *Radio) void {
-        var egress_queue_iter = self.egress_queue.iterator();
-        while (egress_queue_iter.next()) |msg| {
-            self.gpa.free(msg);
+    fn createTurn(io: std.Io, our: bool) LinkState {
+        const until = std.Io.Timestamp.now(
+            io,
+            .real,
+        ).addDuration(
+            .fromMilliseconds(turn_duration_ms),
+        );
+        if (our) {
+            return .{
+                .our_turn = .{
+                    .until = until,
+                },
+            };
+        } else {
+            return .{
+                .their_turn = .{
+                    .until = until,
+                },
+            };
         }
-        self.egress_queue.deinit(self.gpa);
-        self.ingress_payload_buf.deinit(self.gpa);
     }
 
-    pub fn sendMessage(self: *Radio, data: []const u8) !void {
-        try self.egress_queue.pushBack(self.gpa, data);
-    }
-
-    pub fn chunkAndSend(self: *Radio, data: []const u8) !void {
+    fn chunkAndSend(self: *Radio, data: []const u8) !void {
         var remaining = data;
         var chunks = std.ArrayList([]const u8).empty;
         defer chunks.deinit(self.gpa);
@@ -122,6 +118,19 @@ pub const Radio = struct {
         }
 
         self.next_egress_packet_id += 1;
+    }
+
+    pub fn deinit(self: *Radio) void {
+        var egress_queue_iter = self.egress_queue.iterator();
+        while (egress_queue_iter.next()) |msg| {
+            self.gpa.free(msg);
+        }
+        self.egress_queue.deinit(self.gpa);
+        self.ingress_payload_buf.deinit(self.gpa);
+    }
+
+    pub fn sendMessage(self: *Radio, data: []const u8) !void {
+        try self.egress_queue.pushBack(self.gpa, data);
     }
 
     pub fn update(self: *Radio, io: std.Io) !?[]const u8 {
@@ -171,7 +180,7 @@ pub const Radio = struct {
             .unknown => {
                 const first = self.egress_queue.front();
                 if (first) |first_nn| {
-                    self.link_state = createOurTurn(io);
+                    self.link_state = createTurn(io, true);
                     try self.chunkAndSend(first_nn);
                 } else {
                     try self.receive();
@@ -180,7 +189,12 @@ pub const Radio = struct {
             .our_turn => |our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-
+                    const first = self.egress_queue.front();
+                    if (first) |first_nn| {
+                        try self.chunkAndSend(first_nn);
+                    }
+                } else {
+                    self.link_state = createTurn(io, false);
                 }
             },
             .their_turn => |their_turn| {
@@ -189,8 +203,10 @@ pub const Radio = struct {
                     try self.receive();
                 } else {
                     if (self.egress_queue.len > 0) {
-                        self.link_state = createOurTurn(io);
-                    } else {}
+                        self.link_state = createTurn(io, true);
+                    } else {
+                        self.link_state = .unknown;
+                    }
                 }
             },
         }
