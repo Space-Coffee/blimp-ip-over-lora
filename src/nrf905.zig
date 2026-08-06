@@ -105,18 +105,28 @@ pub const Nrf905 = struct {
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
         gpio_mask = 1 << self.pins.dr_pin;
-        while (true) {
+        var retry_count: u32 = 0;
+        const max_retries: u32 = 100;
+        while (retry_count < max_retries) {
             try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
 
             gpio_val = self.gpio_ctrl.get(gpio_mask);
             if ((gpio_val & (1 << self.pins.dr_pin)) != 0) {
                 break;
             }
+            retry_count += 1;
         }
 
         gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
         gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
+
+        if (retry_count >= max_retries) {
+            Logger.warn("Max retry count ({d}) exceeded!", .{max_retries});
+            return error.TooManyRetries;
+        }
+
+        Logger.debug("Transmission complete", .{});
     }
 
     pub fn receive(self: *Nrf905) !void {
