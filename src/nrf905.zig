@@ -70,6 +70,47 @@ pub const Nrf905 = struct {
         _ = self;
     }
 
+    pub fn transmit(self: *Nrf905, dest_addr: u32, payload: []const u8) !void {
+        if (payload.len > 32) {
+            return error.IllegalLength;
+        }
+
+        var msg_buf = std.mem.zeroes([33]u8);
+        var trash_buf: [33]u8 = undefined;
+
+        // Set TX address
+        msg_buf[0] = 0b00100010;
+        msg_buf[1] = @truncate(dest_addr);
+        msg_buf[1] = @truncate(dest_addr >> 8);
+        msg_buf[1] = @truncate(dest_addr >> 16);
+        msg_buf[1] = @truncate(dest_addr >> 24);
+        self.spi_dev.transact(msg_buf[0..5], trash_buf[0..5]);
+
+        // Send payload
+        msg_buf[0] = 0b0010000;
+        @memcpy(msg_buf[1..(payload.len + 1)], payload);
+        self.spi_dev.transact(&msg_buf, &trash_buf);
+
+        // Set TRX_CE and TX_EN
+        var gpio_val: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        var gpio_mask: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        self.gpio_ctrl.set(gpio_val, gpio_mask);
+
+        gpio_mask = 1 << self.pins.dr_pin;
+        while (true) {
+            try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
+
+            gpio_val = self.gpio_ctrl.get(gpio_mask);
+            if ((gpio_val & (1 << self.pins.dr_pin)) != 0) {
+                break;
+            }
+        }
+
+        gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
+        gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        self.gpio_ctrl.set(gpio_val, gpio_mask);
+    }
+
     fn spi_read_configs(self: *const Nrf905, reg_start: u4, values: []u8) !void {
         var msg_tx_buf = std.mem.zeroes([17]u8);
         var msg_rx_buf: [17]u8 = undefined;
