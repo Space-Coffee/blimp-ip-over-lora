@@ -13,6 +13,8 @@ pub const GpioCtrl = struct {
     in_lines: []u32,
     in_lines_fd: i32,
 
+    const Logger = std.log.scoped(.gpio);
+
     pub fn init(io: std.Io, dev_path: []const u8, out_lines: []const u32, in_lines: []const u32) !GpioCtrl {
         if (out_lines.len > 64 or in_lines.len > 64) {
             return error.LengthTooLarge;
@@ -48,7 +50,7 @@ pub const GpioCtrl = struct {
                 "couldn't open GPIO output",
             );
             if (out_req.fd < 0) {
-                std.log.err(
+                Logger.err(
                     "Failed to open gpio device {s} output lines with errno = {d}",
                     .{ dev_path, std.c._errno().* },
                 );
@@ -74,7 +76,7 @@ pub const GpioCtrl = struct {
                 "couldn't open GPIO input",
             );
             if (in_req.fd < 0) {
-                std.log.err(
+                Logger.err(
                     "Failed to open gpio device {s} input lines with errno = {d}",
                     .{ dev_path, std.c._errno().* },
                 );
@@ -84,6 +86,8 @@ pub const GpioCtrl = struct {
         } else {
             self.in_lines_fd = -1;
         }
+
+        Logger.info("GPIO ready", .{});
 
         return self;
     }
