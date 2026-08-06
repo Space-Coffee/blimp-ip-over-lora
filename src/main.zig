@@ -20,6 +20,7 @@ pub fn main(init: std.process.Init) !void {
 
     var nrf905_inst = try nrf905.Nrf905.init(
         init.io,
+        init.gpa,
         &spi_dev,
         &gpio_ctrl,
         .{ // TODO: Determine pin numbers
@@ -33,8 +34,10 @@ pub fn main(init: std.process.Init) !void {
 
     var radio_iface = radio.Radio{
         .gpa = init.gpa,
-        .vt = .dummy,
-        .impl = undefined,
+        // .vt = .dummy,
+        .vt = nrf905_inst.getVtable(),
+        // .impl = undefined,
+        .impl = @ptrCast(&nrf905_inst),
         .packet_len_min = 32,
         .packet_len_max = 32,
     };

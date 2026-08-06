@@ -1,13 +1,16 @@
 const std = @import("std");
 const spi = @import("spi.zig");
 const gpio = @import("gpio.zig");
+const radio = @import("radio.zig");
 
 pub const Nrf905 = struct {
     io: std.Io,
+    gpa: std.mem.Allocator,
     spi_dev: *spi.Spi,
     gpio_ctrl: *gpio.GpioCtrl,
     pins: Pins,
     settings: Settings,
+    peer_addr: u32,
 
     pub const Pins = struct {
         tx_en_pin: u32,
@@ -37,6 +40,7 @@ pub const Nrf905 = struct {
 
     pub fn init(
         io: std.Io,
+        gpa: std.mem.Allocator,
         spi_dev: *spi.Spi,
         gpio_ctrl: *gpio.GpioCtrl,
         pins: Pins,
@@ -44,10 +48,12 @@ pub const Nrf905 = struct {
     ) !Nrf905 {
         const new_self = Nrf905{
             .io = io,
+            .gpa = gpa,
             .spi_dev = spi_dev,
             .gpio_ctrl = gpio_ctrl,
             .pins = pins,
             .settings = settings,
+            .peer_addr = 0x12345678,
         };
 
         const configs = [10]u8{
@@ -63,7 +69,7 @@ pub const Nrf905 = struct {
             (@as(u8, settings.crc_mode) << 7) | (@as(u8, settings.crc_en) << 6) | (@as(u8, settings.cryst_freq) << 3) |
                 (@as(u8, settings.up_clk_en) << 2) | @as(u8, settings.up_clk_freq),
         };
-        try new_self.spi_write_configs(0, &configs);
+        try new_self.spiWriteConfigs(0, &configs);
 
         Logger.info("Radio nRF905 ready", .{});
 
@@ -100,8 +106,8 @@ pub const Nrf905 = struct {
         try self.spi_dev.transact(&msg_buf, &trash_buf);
 
         // Set TRX_CE and TX_EN
-        var gpio_val: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
-        var gpio_mask: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        var gpio_val: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
+        var gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
         gpio_mask = 1 << self.pins.dr_pin;
@@ -158,7 +164,16 @@ pub const Nrf905 = struct {
         return null;
     }
 
-    fn spi_read_configs(self: *const Nrf905, reg_start: u4, values: []u8) !void {
+    pub fn getVtable(self: *const Nrf905) radio.Radio.VTable {
+        _ = self;
+        return .{
+            .transmit_fn = interfaceTransmit,
+            .receive_fn = interfaceReceive,
+            .get_received_fn = interfaceGetReceived,
+        };
+    }
+
+    fn spiReadConfigs(self: *const Nrf905, reg_start: u4, values: []u8) !void {
         var msg_tx_buf = std.mem.zeroes([17]u8);
         var msg_rx_buf: [17]u8 = undefined;
         msg_tx_buf[0] = 0x10 | reg_start;
@@ -169,7 +184,7 @@ pub const Nrf905 = struct {
         @memcpy(values, msg_rx_buf[1..(values.len + 1)]);
     }
 
-    fn spi_write_configs(self: *const Nrf905, reg_start: u4, values: []const u8) !void {
+    fn spiWriteConfigs(self: *const Nrf905, reg_start: u4, values: []const u8) !void {
         var msg_tx_buf: [17]u8 = undefined;
         var msg_rx_buf: [17]u8 = undefined;
         msg_tx_buf[0] = 0x00 | reg_start;
@@ -178,5 +193,26 @@ pub const Nrf905 = struct {
             msg_tx_buf[0..(values.len + 1)],
             msg_rx_buf[0..(values.len + 1)],
         );
+    }
+
+    fn interfaceTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
+        const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
+        self_typed.transmit(self_typed.peer_addr, data) catch return error.TransmitError;
+    }
+
+    fn interfaceReceive(self: *anyopaque) error{ReceiveError}!void {
+        const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
+        self_typed.receive() catch return error.ReceiveError;
+    }
+
+    fn interfaceGetReceived(self: *anyopaque) error{ReceiveError}!?[]const u8 {
+        const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
+        const result = self_typed.getReceived() catch return error.ReceiveError;
+        if (result) |result_nn| {
+            const msg = try self_typed.gpa.alloc(u8, 32);
+            @memcpy(msg, &result_nn);
+            return msg;
+        }
+        return null;
     }
 };
