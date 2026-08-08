@@ -143,15 +143,21 @@ pub const Radio = struct {
             msg_buf[2] = @intCast(i);
             msg_buf[3] = @intCast(curr_chunk.len);
             @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
+            var padding: u32 = 0;
+            if (curr_chunk.len + 4 < self.packet_len_min) {
+                padding = @intCast(self.packet_len_min - (curr_chunk.len + 4));
+                @memset(msg_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
+            }
 
-            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d})", .{
+            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
                 i,
                 chunks.items.len,
                 curr_chunk.len,
                 data.len,
+                padding,
             });
 
-            try self.transmit(msg_buf[0..(curr_chunk.len + 4)]);
+            try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
 
         self.next_egress_packet_id += 1;
@@ -222,6 +228,7 @@ pub const Radio = struct {
                 } else {
                     const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
+                        defer self.gpa.free(first_nn);
                         Logger.debug("We're interrupting the silence", .{});
                         self.link_state = createTurn(io, true);
                         try self.chunkAndSend(first_nn);
@@ -235,6 +242,7 @@ pub const Radio = struct {
                     // Still our turn
                     const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
+                        defer self.gpa.free(first_nn);
                         try self.chunkAndSend(first_nn);
                     }
                 } else {
