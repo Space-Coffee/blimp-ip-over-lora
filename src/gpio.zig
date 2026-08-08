@@ -15,7 +15,12 @@ pub const GpioCtrl = struct {
 
     const Logger = std.log.scoped(.gpio);
 
-    pub fn init(io: std.Io, dev_path: []const u8, out_lines: []const u32, in_lines: []const u32) !GpioCtrl {
+    pub fn init(
+        io: std.Io,
+        dev_path: []const u8,
+        out_lines: []const u32,
+        in_lines: []const u32,
+    ) !GpioCtrl {
         if (out_lines.len > 64 or in_lines.len > 64) {
             return error.LengthTooLarge;
         }
@@ -32,8 +37,10 @@ pub const GpioCtrl = struct {
             .in_lines = undefined,
             .in_lines_fd = undefined,
         };
-        @memcpy(self.out_lines[0..out_lines.len], out_lines);
-        @memcpy(self.in_lines[0..in_lines.len], in_lines);
+        @memcpy(self.out_lines_buf[0..out_lines.len], out_lines);
+        self.out_lines = self.out_lines_buf[0..out_lines.len];
+        @memcpy(self.in_lines_buf[0..in_lines.len], in_lines);
+        self.in_lines = self.in_lines_buf[0..in_lines.len];
 
         if (out_lines.len > 0) {
             var out_req = std.mem.zeroes(c.gpio_v2_line_request);

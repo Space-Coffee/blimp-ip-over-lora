@@ -12,7 +12,12 @@ pub fn main(init: std.process.Init) !void {
     try spi_dev.write_reg8(0b10110001, 0x00);
 
     const gpio_dev_path: [:0]const u8 = "/dev/gpiochip0";
-    var gpio_ctrl = try gpio.GpioCtrl.init(init.io, gpio_dev_path, &.{}, &.{});
+    var gpio_ctrl = try gpio.GpioCtrl.init(
+        init.io,
+        gpio_dev_path,
+        &.{},
+        &.{ 23, 24, 25 },
+    );
     defer gpio_ctrl.deinit(init.io);
 
     const tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
@@ -23,10 +28,10 @@ pub fn main(init: std.process.Init) !void {
         init.gpa,
         &spi_dev,
         &gpio_ctrl,
-        .{ // TODO: Determine pin numbers
-            .tx_en_pin = 1,
-            .trx_ce_pin = 2,
-            .dr_pin = 3,
+        .{
+            .tx_en_pin = 0,
+            .trx_ce_pin = 1,
+            .dr_pin = 2,
         },
         .{},
     );
