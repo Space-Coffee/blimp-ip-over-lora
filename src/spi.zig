@@ -19,7 +19,7 @@ pub const Spi = struct {
             @intFromPtr(&buf8),
             "couldn't set SPI mode",
         );
-        buf8 = 0; // MSF first
+        buf8 = 0; // MSB first
         _ = try misc.ioctl_checked(
             fd,
             c.SPI_IOC_WR_LSB_FIRST,
@@ -72,10 +72,11 @@ pub const Spi = struct {
     pub fn write_bulk(self: *Spi, addr: u8, data: []const u8, gpa: std.mem.Allocator) !void {
         const fd = self.dev_file.handle;
         var xfer = std.mem.zeroes(c.spi_ioc_transfer);
-        const buf = gpa.alloc(u8, data.len + 1);
+        const buf = try gpa.alloc(u8, data.len + 1);
+        defer gpa.free(buf);
         buf[0] = addr | 0x80; // Indicate write
         @memcpy(buf[1..], data);
-        xfer.tx_buf = @intFromPtr(&buf);
+        xfer.tx_buf = @intFromPtr(buf.ptr);
         xfer.rx_buf = 0;
         xfer.len = data.len + 1;
 
@@ -132,8 +133,8 @@ pub const Spi = struct {
 
         const fd = self.dev_file.handle;
         var xfer = std.mem.zeroes(c.spi_ioc_transfer);
-        xfer.tx_buf = @intFromPtr(&data_tx);
-        xfer.rx_buf = @intFromPtr(&data_rx);
+        xfer.tx_buf = @intFromPtr(data_tx.ptr);
+        xfer.rx_buf = @intFromPtr(data_rx.ptr);
         xfer.len = @intCast(data_tx.len);
 
         _ = try misc.ioctl_checked(
@@ -142,5 +143,10 @@ pub const Spi = struct {
             @intFromPtr(&xfer),
             "coulnd't perform SPI transaction",
         );
+
+        Logger.debug("SPI transaction: tx={any}, rx={any}", .{
+            data_tx,
+            data_rx,
+        });
     }
 };

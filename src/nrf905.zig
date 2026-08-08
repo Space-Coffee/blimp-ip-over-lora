@@ -125,12 +125,12 @@ pub const Nrf905 = struct {
         const max_retries: u32 = 100;
         while (retry_count < max_retries) {
             try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
+            retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
             if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
             }
-            retry_count += 1;
         }
 
         // gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
@@ -141,6 +141,8 @@ pub const Nrf905 = struct {
         if (retry_count >= max_retries) {
             Logger.warn("Max retry count ({d}) exceeded!", .{max_retries});
             return error.TooManyRetries;
+        } else {
+            Logger.debug("Transmit took {d} retries", .{retry_count});
         }
 
         Logger.debug("Transmission complete", .{});

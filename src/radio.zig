@@ -116,15 +116,19 @@ pub const Radio = struct {
         defer chunks.deinit(self.gpa);
         while (remaining.len > 0) {
             var curr_chunk: []const u8 = undefined;
+            var should_break: bool = false;
             if (remaining.len <= self.packet_len_max - 4) {
                 curr_chunk = remaining;
-                break;
+                should_break = true;
             } else {
                 curr_chunk = remaining[0..(self.packet_len_max - 4)];
                 remaining = remaining[(self.packet_len_max - 4)..];
             }
 
             try chunks.append(self.gpa, curr_chunk);
+            if (should_break) {
+                break;
+            }
         }
 
         if (chunks.items.len > 255) {
