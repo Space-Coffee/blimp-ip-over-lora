@@ -80,6 +80,16 @@ pub const Nrf905 = struct {
         _ = self;
     }
 
+    pub fn checkDevice(self: *Nrf905) !bool {
+        var buf: [1]u8 = undefined;
+        try self.spiReadConfigs(3, &buf);
+        const result = @popCount(buf[0]) == 1;
+        if (!result) {
+            Logger.warn("Device check failed! Reg[3] = 0x{x}", .{buf[0]});
+        }
+        return result;
+    }
+
     pub fn transmit(self: *Nrf905, dest_addr: u32, payload: []const u8) !void {
         if (payload.len > 32) {
             return error.IllegalLength;
@@ -177,7 +187,7 @@ pub const Nrf905 = struct {
     fn spiReadConfigs(self: *const Nrf905, reg_start: u4, values: []u8) !void {
         var msg_tx_buf = std.mem.zeroes([17]u8);
         var msg_rx_buf: [17]u8 = undefined;
-        msg_tx_buf[0] = 0x10 | reg_start;
+        msg_tx_buf[0] = 0x10 | @as(u8, reg_start);
         try self.spi_dev.transact(
             msg_tx_buf[0..(values.len + 1)],
             msg_rx_buf[0..(values.len + 1)],

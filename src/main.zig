@@ -31,6 +31,7 @@ pub fn main(init: std.process.Init) !void {
         .{},
     );
     defer nrf905_inst.deinit();
+    _ = try nrf905_inst.checkDevice();
 
     var radio_iface = radio.Radio{
         .gpa = init.gpa,
