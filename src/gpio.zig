@@ -103,7 +103,7 @@ pub const GpioCtrl = struct {
     }
 
     pub fn set(self: *GpioCtrl, val: u64, mask: u64) !void {
-        var vals = std.mem.zeroes(c.gpio_v2_line_value);
+        var vals = std.mem.zeroes(c.gpio_v2_line_values);
         vals.bits = val;
         vals.mask = mask;
         _ = try misc.ioctl_checked(
@@ -115,7 +115,7 @@ pub const GpioCtrl = struct {
     }
 
     pub fn get(self: *GpioCtrl, mask: u64) !u64 {
-        var vals = std.mem.zeroes(c.gpio_v2_line_value);
+        var vals = std.mem.zeroes(c.gpio_v2_line_values);
         vals.mask = mask;
         _ = try misc.ioctl_checked(
             self.dev_file.handle,

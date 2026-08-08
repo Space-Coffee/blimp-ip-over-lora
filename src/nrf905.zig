@@ -110,21 +110,22 @@ pub const Nrf905 = struct {
         var gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
-        gpio_mask = 1 << self.pins.dr_pin;
+        gpio_mask = @as(u64, 1) << @intCast(self.pins.dr_pin);
         var retry_count: u32 = 0;
         const max_retries: u32 = 100;
         while (retry_count < max_retries) {
             try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
 
-            gpio_val = self.gpio_ctrl.get(gpio_mask);
-            if ((gpio_val & (1 << self.pins.dr_pin)) != 0) {
+            gpio_val = try self.gpio_ctrl.get(gpio_mask);
+            if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
             }
             retry_count += 1;
         }
 
-        gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
-        gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        // gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
+        gpio_val = 0;
+        gpio_mask = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
         if (retry_count >= max_retries) {
@@ -136,24 +137,24 @@ pub const Nrf905 = struct {
     }
 
     pub fn receive(self: *Nrf905) !void {
-        const gpio_val: u64 = (1 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
-        const gpio_mask: u64 = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        const gpio_val: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 0) << @intCast(self.pins.tx_en_pin));
+        const gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
     }
 
     pub fn getReceived(self: *Nrf905) !?[32]u8 {
-        var gpio_mask: u64 = (1 << self.pins.dr_pin);
+        var gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.dr_pin));
         var gpio_val = try self.gpio_ctrl.get(gpio_mask);
 
-        if (gpio_val & (1 << self.pins.dr_pin)) {
-            gpio_val = (0 << self.pins.trx_ce_pin) | (0 << self.pins.tx_en_pin);
-            gpio_mask = (1 << self.pins.trx_ce_pin) | (1 << self.pins.tx_en_pin);
+        if (gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin)) != 0) {
+            gpio_val = (@as(u64, 0) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 0) << @intCast(self.pins.tx_en_pin));
+            gpio_mask = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
             try self.gpio_ctrl.set(gpio_val, gpio_mask);
 
             var tx_msg_buf = std.mem.zeroes([33]u8);
             var rx_msg_buf: [33]u8 = undefined;
             tx_msg_buf[0] = 0b00100100;
-            self.spi_dev.transact(tx_msg_buf, rx_msg_buf);
+            try self.spi_dev.transact(&tx_msg_buf, &rx_msg_buf);
 
             Logger.debug("Received a packet", .{});
 
@@ -209,7 +210,7 @@ pub const Nrf905 = struct {
         const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
         const result = self_typed.getReceived() catch return error.ReceiveError;
         if (result) |result_nn| {
-            const msg = try self_typed.gpa.alloc(u8, 32);
+            const msg = self_typed.gpa.alloc(u8, 32) catch return error.ReceiveError;
             @memcpy(msg, &result_nn);
             return msg;
         }
