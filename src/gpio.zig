@@ -114,7 +114,7 @@ pub const GpioCtrl = struct {
         vals.bits = val;
         vals.mask = mask;
         _ = try misc.ioctl_checked(
-            self.dev_file.handle,
+            self.out_lines_fd,
             c.GPIO_V2_LINE_SET_VALUES_IOCTL,
             @intFromPtr(&vals),
             "couldn't set GPIO values",
@@ -125,7 +125,7 @@ pub const GpioCtrl = struct {
         var vals = std.mem.zeroes(c.gpio_v2_line_values);
         vals.mask = mask;
         _ = try misc.ioctl_checked(
-            self.dev_file.handle,
+            self.in_lines_fd,
             c.GPIO_V2_LINE_GET_VALUES_IOCTL,
             @intFromPtr(&vals),
             "couldn't get GPIO values",

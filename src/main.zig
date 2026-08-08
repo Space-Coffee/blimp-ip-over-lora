@@ -15,8 +15,8 @@ pub fn main(init: std.process.Init) !void {
     var gpio_ctrl = try gpio.GpioCtrl.init(
         init.io,
         gpio_dev_path,
-        &.{},
-        &.{ 23, 24, 25 },
+        &.{ 23, 24 },
+        &.{25},
     );
     defer gpio_ctrl.deinit(init.io);
 
@@ -31,7 +31,7 @@ pub fn main(init: std.process.Init) !void {
         .{
             .tx_en_pin = 0,
             .trx_ce_pin = 1,
-            .dr_pin = 2,
+            .dr_pin = 0,
         },
         .{},
     );

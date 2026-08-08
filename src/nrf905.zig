@@ -84,7 +84,9 @@ pub const Nrf905 = struct {
         var buf: [1]u8 = undefined;
         try self.spiReadConfigs(3, &buf);
         const result = @popCount(buf[0]) == 1;
-        if (!result) {
+        if (result) {
+            Logger.info("Device check passed! Reg[3] = 0x{x}", .{buf[0]});
+        } else {
             Logger.warn("Device check failed! Reg[3] = 0x{x}", .{buf[0]});
         }
         return result;
@@ -122,12 +124,13 @@ pub const Nrf905 = struct {
 
         gpio_mask = @as(u64, 1) << @intCast(self.pins.dr_pin);
         var retry_count: u32 = 0;
-        const max_retries: u32 = 100;
+        const max_retries: u32 = 200;
         while (retry_count < max_retries) {
             try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
+            Logger.debug("gpio_val = 0x{x}", .{gpio_val});
             if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
             }
