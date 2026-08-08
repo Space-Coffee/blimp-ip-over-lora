@@ -34,9 +34,9 @@ pub fn main(init: std.process.Init) !void {
             .dr_pin = 0,
         },
         .{
-            .channel_num = 112,
+            .channel_num = 105,
             // .channel_num = 116,
-            .pa_power = 0b10,
+            .pa_power = 0b01,
             // .hfreq_pll = 1,
             .hfreq_pll = 0,
         },
