@@ -53,8 +53,15 @@ pub const Nrf905 = struct {
             .gpio_ctrl = gpio_ctrl,
             .pins = pins,
             .settings = settings,
-            .peer_addr = 0x12345678,
+            .peer_addr = 0xE7E7E7E7,
         };
+
+        // Standby
+        const gpio_val: u64 = (@as(u64, 1) << @intCast(pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(pins.tx_en_pin));
+        const gpio_mask: u64 = (@as(u64, 1) << @intCast(pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(pins.tx_en_pin));
+        try gpio_ctrl.set(gpio_val, gpio_mask);
+
+        try std.Io.sleep(io, .fromMilliseconds(3), .real);
 
         const configs = [10]u8{
             @truncate(settings.channel_num),
@@ -70,6 +77,8 @@ pub const Nrf905 = struct {
                 (@as(u8, settings.up_clk_en) << 2) | @as(u8, settings.up_clk_freq),
         };
         try new_self.spiWriteConfigs(0, &configs);
+
+        try std.Io.sleep(io, .fromMilliseconds(3), .real);
 
         Logger.info("Radio nRF905 ready", .{});
 
@@ -90,6 +99,12 @@ pub const Nrf905 = struct {
             Logger.warn("Device check failed! Reg[3] = 0x{x}", .{buf[0]});
         }
         return result;
+    }
+
+    pub fn configDump(self: *Nrf905) !void {
+        var buf: [10]u8 = undefined;
+        try self.spiReadConfigs(0, &buf);
+        Logger.debug("Config: {any}", .{buf});
     }
 
     pub fn transmit(self: *Nrf905, dest_addr: u32, payload: []const u8) !void {
@@ -126,7 +141,7 @@ pub const Nrf905 = struct {
         var retry_count: u32 = 0;
         const max_retries: u32 = 200;
         while (retry_count < max_retries) {
-            try std.Io.sleep(self.io, .fromMilliseconds(50), .real);
+            try std.Io.sleep(self.io, .fromMilliseconds(2), .real);
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
@@ -155,6 +170,8 @@ pub const Nrf905 = struct {
         const gpio_val: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 0) << @intCast(self.pins.tx_en_pin));
         const gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.trx_ce_pin)) | (@as(u64, 1) << @intCast(self.pins.tx_en_pin));
         try self.gpio_ctrl.set(gpio_val, gpio_mask);
+
+        try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
     }
 
     pub fn getReceived(self: *Nrf905) !?[32]u8 {

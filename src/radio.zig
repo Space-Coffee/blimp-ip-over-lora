@@ -186,6 +186,11 @@ pub const Radio = struct {
             const chunk_len = recv_packet_nn[3];
             const payload = recv_packet_nn[4..(4 + chunk_len)];
 
+            Logger.debug(
+                "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
+                .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
+            );
+
             const msg_continued = msg_cont_blk: {
                 if (self.expected_ingress_packet_id) |eipi_nn| {
                     if (eipi_nn == packet_id) {

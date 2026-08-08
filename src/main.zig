@@ -33,10 +33,17 @@ pub fn main(init: std.process.Init) !void {
             .trx_ce_pin = 1,
             .dr_pin = 0,
         },
-        .{},
+        .{
+            .channel_num = 112,
+            // .channel_num = 116,
+            .pa_power = 0b10,
+            // .hfreq_pll = 1,
+            .hfreq_pll = 0,
+        },
     );
     defer nrf905_inst.deinit();
     _ = try nrf905_inst.checkDevice();
+    try nrf905_inst.configDump();
 
     var radio_iface = radio.Radio{
         .gpa = init.gpa,
@@ -53,6 +60,6 @@ pub fn main(init: std.process.Init) !void {
 
     while (true) {
         _ = try radio_iface.update(init.io);
-        try std.Io.sleep(init.io, .fromMilliseconds(200), .real);
+        try std.Io.sleep(init.io, .fromMilliseconds(25), .real);
     }
 }
