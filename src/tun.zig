@@ -127,23 +127,29 @@ pub const Tun = struct {
         radio2tun_queue: *std.Io.Queue([]const u8),
     ) !void {
         var reader_buf: [4096]u8 = undefined;
-        const reader_buf_vec = [_][]u8{&reader_buf};
+        // const reader_buf_vec = [_][]u8{&reader_buf};
         // var tun_reader = self.tun_dev_file.readerStreaming(io, &reader_buf);
 
         var tun_writer_buf: [4096]u8 = undefined;
         var tun_writer = self.tun_dev_file.writer(io, &tun_writer_buf);
 
         const SelectU = union(enum) {
-            tun_read: std.Io.File.ReadStreamingError!usize,
+            // tun_read: std.Io.File.ReadStreamingError!usize,
+            tun_read: std.Io.File.Reader.Error!usize,
             radio_queue_read: error{ Canceled, Closed }![]const u8,
         };
         var select_buf: [2]SelectU = undefined;
         var select = std.Io.Select(SelectU).init(io, &select_buf);
 
+        // try select.concurrent(
+        //     .tun_read,
+        //     std.Io.File.readStreaming,
+        //     .{ self.tun_dev_file, io, &reader_buf_vec },
+        // );
         try select.concurrent(
             .tun_read,
-            std.Io.File.readStreaming,
-            .{ self.tun_dev_file, io, &reader_buf_vec },
+            std.posix.read,
+            .{ self.tun_dev_file.handle, &reader_buf },
         );
         try select.concurrent(
             .radio_queue_read,
@@ -160,10 +166,15 @@ pub const Tun = struct {
                     const msg_copy = try gpa.dupe(u8, reader_buf[0..bytes_read]);
                     try tun2radio_queue.putOne(io, msg_copy);
 
+                    // try select.concurrent(
+                    //     .tun_read,
+                    //     std.Io.File.readStreaming,
+                    //     .{ self.tun_dev_file, io, &reader_buf_vec },
+                    // );
                     try select.concurrent(
                         .tun_read,
-                        std.Io.File.readStreaming,
-                        .{ self.tun_dev_file, io, &reader_buf_vec },
+                        std.posix.read,
+                        .{ self.tun_dev_file.handle, &reader_buf },
                     );
                 },
                 .radio_queue_read => |radio_queue_read| {

@@ -145,9 +145,9 @@ pub const Spi = struct {
             "coulnd't perform SPI transaction",
         );
 
-        Logger.debug("SPI transaction: tx={any}, rx={any}", .{
-            data_tx,
-            data_rx,
-        });
+        // Logger.debug("SPI transaction: tx={any}, rx={any}", .{
+        //     data_tx,
+        //     data_rx,
+        // });
     }
 };

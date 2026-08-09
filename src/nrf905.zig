@@ -144,7 +144,7 @@ pub const Nrf905 = struct {
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
-            _ = try self.checkDevice();
+            // _ = try self.checkDevice();
             // Logger.debug("gpio_val = 0x{x}", .{gpio_val});
             if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
