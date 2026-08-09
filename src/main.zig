@@ -34,8 +34,21 @@ pub fn main(init: std.process.Init) !void {
     );
     defer gpio_ctrl.deinit(init.io);
 
-    const tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
+    var tun2radio_queue_buf: [256][]const u8 = undefined;
+    var tun2radio_queue = std.Io.Queue([]const u8).init(&tun2radio_queue_buf);
+    var radio2tun_queue_buf: [256][]const u8 = undefined;
+    var radio2tun_queue = std.Io.Queue([]const u8).init(&radio2tun_queue_buf);
+
+    var tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
     defer tun_dev.deinit(init.io, init.gpa);
+
+    _ = try init.io.concurrent(tun.Tun.worker, .{
+        &tun_dev,
+        init.io,
+        init.gpa,
+        &tun2radio_queue,
+        &radio2tun_queue,
+    });
 
     var nrf905_inst: ?nrf905.Nrf905 = nrf905_inst_blk: {
         if (conf.nrf905) |conf_nrf905_nn| {
@@ -83,8 +96,62 @@ pub fn main(init: std.process.Init) !void {
     // try radio_iface.transmit("Hello world!");
     try radio_iface.sendMessage(try init.gpa.dupe(u8, "Hello world!"));
 
+    const SelectU = union(enum) {
+        sleep: std.Io.Cancelable!void,
+        tun_queue_read: error{ Canceled, Closed }![]const u8,
+    };
+    var select_buf: [2]SelectU = undefined;
+    var select = std.Io.Select(SelectU).init(init.io, &select_buf);
+
+    try select.concurrent(
+        .sleep,
+        std.Io.sleep,
+        .{
+            init.io,
+            std.Io.Duration.fromMilliseconds(1),
+            std.Io.Clock.real,
+        },
+    );
+    try select.concurrent(
+        .tun_queue_read,
+        std.Io.Queue([]const u8).getOne,
+        .{
+            &tun2radio_queue, init.io,
+        },
+    );
+
     while (true) {
-        _ = try radio_iface.update(init.io);
-        try std.Io.sleep(init.io, .fromMilliseconds(25), .real);
+        const select_result = try select.await();
+        switch (select_result) {
+            .sleep => {
+                const recv_msg = try radio_iface.update(init.io);
+                if (recv_msg) |recv_msg_nn| {
+                    // defer init.gpa.free(recv_msg_nn);
+                    try radio2tun_queue.putOne(init.io, recv_msg_nn);
+                }
+
+                try select.concurrent(
+                    .sleep,
+                    std.Io.sleep,
+                    .{
+                        init.io,
+                        std.Io.Duration.fromMilliseconds(25),
+                        std.Io.Clock.real,
+                    },
+                );
+            },
+            .tun_queue_read => |tun_queue_read| {
+                const msg = try tun_queue_read;
+                try radio_iface.sendMessage(msg);
+
+                try select.concurrent(
+                    .tun_queue_read,
+                    std.Io.Queue([]const u8).getOne,
+                    .{
+                        &tun2radio_queue, init.io,
+                    },
+                );
+            },
+        }
     }
 }

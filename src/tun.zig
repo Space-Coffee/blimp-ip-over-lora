@@ -106,7 +106,7 @@ pub const Tun = struct {
 
         socket.close(io);
 
-        Logger.info("Tun ready", .{});
+        Logger.info("Tun ready (name \"{s}\")", .{assigned_name});
 
         return .{
             .tun_dev_file = tun_dev_file,
@@ -117,5 +117,67 @@ pub const Tun = struct {
     pub fn deinit(self: *const Tun, io: std.Io, gpa: std.mem.Allocator) void {
         gpa.free(self.assigned_name);
         self.tun_dev_file.close(io);
+    }
+
+    pub fn worker(
+        self: *Tun,
+        io: std.Io,
+        gpa: std.mem.Allocator,
+        tun2radio_queue: *std.Io.Queue([]const u8),
+        radio2tun_queue: *std.Io.Queue([]const u8),
+    ) !void {
+        var reader_buf: [4096]u8 = undefined;
+        const reader_buf_vec = [_][]u8{&reader_buf};
+        // var tun_reader = self.tun_dev_file.readerStreaming(io, &reader_buf);
+
+        var tun_writer_buf: [4096]u8 = undefined;
+        var tun_writer = self.tun_dev_file.writer(io, &tun_writer_buf);
+
+        const SelectU = union(enum) {
+            tun_read: std.Io.File.ReadStreamingError!usize,
+            radio_queue_read: error{ Canceled, Closed }![]const u8,
+        };
+        var select_buf: [2]SelectU = undefined;
+        var select = std.Io.Select(SelectU).init(io, &select_buf);
+
+        try select.concurrent(
+            .tun_read,
+            std.Io.File.readStreaming,
+            .{ self.tun_dev_file, io, &reader_buf_vec },
+        );
+        try select.concurrent(
+            .radio_queue_read,
+            std.Io.Queue([]const u8).getOne,
+            .{ radio2tun_queue, io },
+        );
+
+        while (true) {
+            const select_result = try select.await();
+            switch (select_result) {
+                .tun_read => |tun_read| {
+                    const bytes_read = try tun_read;
+                    Logger.debug("Read {d} bytes through tun", .{bytes_read});
+                    const msg_copy = try gpa.dupe(u8, reader_buf[0..bytes_read]);
+                    try tun2radio_queue.putOne(io, msg_copy);
+
+                    try select.concurrent(
+                        .tun_read,
+                        std.Io.File.readStreaming,
+                        .{ self.tun_dev_file, io, &reader_buf_vec },
+                    );
+                },
+                .radio_queue_read => |radio_queue_read| {
+                    const radio_msg = try radio_queue_read;
+                    defer gpa.free(radio_msg);
+                    try tun_writer.interface.writeAll(radio_msg);
+
+                    try select.concurrent(
+                        .radio_queue_read,
+                        std.Io.Queue([]const u8).getOne,
+                        .{ radio2tun_queue, io },
+                    );
+                },
+            }
+        }
     }
 };
