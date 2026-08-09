@@ -131,13 +131,16 @@ pub fn main(init: std.process.Init) !void {
         const select_result = try select.await();
         switch (select_result) {
             .sleep => {
-                const recv_msg = try radio_iface.update(init.io);
-                // var delay_us: i64 = 25000;
-                var delay_us: i64 = 1000;
-                if (recv_msg) |recv_msg_nn| {
-                    // defer init.gpa.free(recv_msg_nn);
-                    try radio2tun_queue.putOne(init.io, recv_msg_nn);
-                    delay_us = 1;
+                while (true) {
+                    const update_result = try radio_iface.update(init.io);
+                    if (update_result.recv_msg) |recv_msg_nn| {
+                        // defer init.gpa.free(recv_msg_nn);
+                        try radio2tun_queue.putOne(init.io, recv_msg_nn);
+                    }
+
+                    if (!update_result.quick_update) {
+                        break;
+                    }
                 }
 
                 try select.concurrent(
@@ -145,7 +148,7 @@ pub fn main(init: std.process.Init) !void {
                     std.Io.sleep,
                     .{
                         init.io,
-                        std.Io.Duration.fromMicroseconds(delay_us),
+                        std.Io.Duration.fromMicroseconds(1000),
                         std.Io.Clock.real,
                     },
                 );

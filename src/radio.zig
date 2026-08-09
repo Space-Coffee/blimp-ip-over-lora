@@ -20,8 +20,10 @@ pub const Radio = struct {
     // expected_ingress_packet_chunks_count: ?u8 = null,
     expected_ingress_chunk_num: ?u8 = null,
     ingress_payload_buf: std.ArrayList(u8) = .empty,
+    empty_our_turns: i32 = max_empty_turns,
 
-    const turn_duration_ms: i64 = 500;
+    const turn_duration_ms: i64 = 800;
+    const max_empty_turns: i32 = 2;
 
     pub const VTable = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
@@ -160,7 +162,7 @@ pub const Radio = struct {
             try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
 
-        self.next_egress_packet_id += 1;
+        self.next_egress_packet_id +%= 1;
     }
 
     pub fn deinit(self: *Radio) void {
@@ -176,9 +178,13 @@ pub const Radio = struct {
         try self.egress_queue.pushBack(self.gpa, data);
     }
 
-    pub fn update(self: *Radio, io: std.Io) !?[]const u8 {
+    pub fn update(
+        self: *Radio,
+        io: std.Io,
+    ) !struct { recv_msg: ?[]const u8, quick_update: bool } {
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
+        var quick_update = false;
         if (recv_packet) |recv_packet_nn| {
             const packet_id = recv_packet_nn[0];
             const packet_chunks_count = recv_packet_nn[1];
@@ -190,6 +196,7 @@ pub const Radio = struct {
                 "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
                 .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
             );
+            quick_update = true;
 
             const msg_continued, const prev_packet_lost = msg_cont_blk: {
                 if (self.expected_ingress_packet_id) |eipi_nn| {
@@ -237,12 +244,20 @@ pub const Radio = struct {
                     self.link_state = createTurn(io, false);
                     try self.receive();
                 } else {
-                    const first = self.egress_queue.popFront();
-                    if (first) |first_nn| {
-                        defer self.gpa.free(first_nn);
-                        Logger.debug("We're interrupting the silence", .{});
-                        self.link_state = createTurn(io, true);
-                        try self.chunkAndSend(first_nn);
+                    // This should decrease likelihood of collisions
+                    var rand_val: [4]u8 = undefined;
+                    io.random(&rand_val);
+                    if (@as(u32, @bitCast(rand_val)) % 1000 == 0) {
+                        const first = self.egress_queue.popFront();
+                        if (first) |first_nn| {
+                            defer self.gpa.free(first_nn);
+                            Logger.debug("We're interrupting the silence", .{});
+                            self.link_state = createTurn(io, true);
+                            try self.chunkAndSend(first_nn);
+                            self.empty_our_turns = max_empty_turns;
+                        } else {
+                            try self.receive();
+                        }
                     } else {
                         try self.receive();
                     }
@@ -251,14 +266,21 @@ pub const Radio = struct {
             .our_turn => |our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    const first = self.egress_queue.popFront();
-                    if (first) |first_nn| {
-                        defer self.gpa.free(first_nn);
-                        try self.chunkAndSend(first_nn);
+                    if (now.durationTo(our_turn.until).nanoseconds > turn_duration_ms * 1000000 / 2) {
+                        const first = self.egress_queue.popFront();
+                        if (first) |first_nn| {
+                            defer self.gpa.free(first_nn);
+                            try self.chunkAndSend(first_nn);
+                            self.empty_our_turns = max_empty_turns;
+                        }
+                    } else {
+                        try self.receive();
                     }
                 } else {
                     Logger.debug("We're giving the turn back to them", .{});
                     self.link_state = createTurn(io, false);
+                    self.empty_our_turns -= 1;
+                    try self.receive();
                 }
             },
             .their_turn => |their_turn| {
@@ -266,7 +288,7 @@ pub const Radio = struct {
                     //Still their turn
                     try self.receive();
                 } else {
-                    if (self.egress_queue.len > 0) {
+                    if (self.empty_our_turns >= 0) {
                         Logger.debug("We're getting the turn back", .{});
                         self.link_state = createTurn(io, true);
                     } else {
@@ -277,6 +299,9 @@ pub const Radio = struct {
             },
         }
 
-        return recv_msg;
+        return .{
+            .recv_msg = recv_msg,
+            .quick_update = quick_update,
+        };
     }
 };
