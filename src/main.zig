@@ -14,6 +14,7 @@ pub fn main(init: std.process.Init) !void {
     var conf_file_reader = conf_file.reader(init.io, &conf_file_reader_buf);
     var conf_content_writer_alloc = std.Io.Writer.Allocating.init(init.gpa);
     _ = try conf_file_reader.interface.streamRemaining(&conf_content_writer_alloc.writer);
+    try conf_content_writer_alloc.writer.flush();
     const conf_content_sentinel = try conf_content_writer_alloc.toOwnedSliceSentinel(0);
     defer init.gpa.free(conf_content_sentinel);
     const conf = try std.zon.parse.fromSliceAlloc(config.ConfigRoot, init.gpa, conf_content_sentinel, null, .{});
@@ -39,7 +40,13 @@ pub fn main(init: std.process.Init) !void {
     var radio2tun_queue_buf: [256][]const u8 = undefined;
     var radio2tun_queue = std.Io.Queue([]const u8).init(&radio2tun_queue_buf);
 
-    var tun_dev = try tun.Tun.init(init.io, init.gpa, "ip-over-lora");
+    var tun_dev = try tun.Tun.init(
+        init.io,
+        init.gpa,
+        "ip-over-lora",
+        conf.tun.local_addr,
+        conf.tun.netmask,
+    );
     defer tun_dev.deinit(init.io, init.gpa);
 
     _ = try init.io.concurrent(tun.Tun.worker, .{
@@ -125,9 +132,12 @@ pub fn main(init: std.process.Init) !void {
         switch (select_result) {
             .sleep => {
                 const recv_msg = try radio_iface.update(init.io);
+                // var delay_us: i64 = 25000;
+                var delay_us: i64 = 1000;
                 if (recv_msg) |recv_msg_nn| {
                     // defer init.gpa.free(recv_msg_nn);
                     try radio2tun_queue.putOne(init.io, recv_msg_nn);
+                    delay_us = 1;
                 }
 
                 try select.concurrent(
@@ -135,7 +145,7 @@ pub fn main(init: std.process.Init) !void {
                     std.Io.sleep,
                     .{
                         init.io,
-                        std.Io.Duration.fromMilliseconds(25),
+                        std.Io.Duration.fromMicroseconds(delay_us),
                         std.Io.Clock.real,
                     },
                 );

@@ -15,4 +15,8 @@
         .packet_len_min = 32,
         .packet_len_max = 32,
     },
+    .tun = .{
+        .local_addr = "10.12.34.1",
+        .netmask = "255.255.255.0",
+    },
 }

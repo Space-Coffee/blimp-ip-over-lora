@@ -152,6 +152,7 @@ pub const Nrf905 = struct {
         }
 
         try self.setMode(.standby);
+        try std.Io.sleep(self.io, .fromMilliseconds(2), .real);
 
         if (retry_count >= max_retries) {
             Logger.warn("Max retry count ({d}) exceeded!", .{max_retries});
@@ -160,7 +161,7 @@ pub const Nrf905 = struct {
             Logger.debug("Transmit took {d} retries", .{retry_count});
         }
 
-        Logger.debug("Transmission complete", .{});
+        // Logger.debug("Transmission complete", .{});
     }
 
     pub fn receive(self: *Nrf905) !void {
@@ -183,7 +184,7 @@ pub const Nrf905 = struct {
             tx_msg_buf[0] = 0b00100100;
             try self.spi_dev.transact(&tx_msg_buf, &rx_msg_buf);
 
-            Logger.debug("Received a packet", .{});
+            // Logger.debug("Received a packet", .{});
 
             var result: [32]u8 = undefined;
             @memcpy(&result, rx_msg_buf[1..33]);

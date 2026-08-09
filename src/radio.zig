@@ -191,18 +191,24 @@ pub const Radio = struct {
                 .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
             );
 
-            const msg_continued = msg_cont_blk: {
+            const msg_continued, const prev_packet_lost = msg_cont_blk: {
                 if (self.expected_ingress_packet_id) |eipi_nn| {
                     if (eipi_nn == packet_id) {
-                        break :msg_cont_blk true;
+                        break :msg_cont_blk .{ true, false };
                     } else {
-                        break :msg_cont_blk false;
+                        break :msg_cont_blk .{ false, true };
                     }
                 } else {
-                    break :msg_cont_blk false;
+                    break :msg_cont_blk .{ false, false };
                 }
             };
             if (!msg_continued) {
+                if (prev_packet_lost) {
+                    Logger.warn("Packet with id {d} has been lost!", .{
+                        self.expected_ingress_packet_id.?,
+                    });
+                }
+
                 self.ingress_payload_buf.clearRetainingCapacity();
                 self.expected_ingress_packet_id = packet_id;
                 // self.expected_ingress_packet_chunks_count = packet_chunks_count;

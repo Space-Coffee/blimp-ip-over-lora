@@ -18,4 +18,8 @@ pub const ConfigRoot = struct {
         packet_len_min: u32,
         packet_len_max: u32,
     },
+    tun: struct {
+        local_addr: [:0]const u8,
+        netmask: [:0]const u8,
+    },
 };
