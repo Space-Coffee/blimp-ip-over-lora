@@ -28,6 +28,18 @@ pub const Radio = struct {
         receive_fn: *const fn (self: *anyopaque) error{ReceiveError}!void,
         get_received_fn: *const fn (self: *anyopaque) error{ReceiveError}!?[]const u8,
 
+        pub const failing = VTable{
+            .transmit_fn = failingTransmit,
+            .receive_fn = failingReceive,
+            .get_received_fn = failingGetReceived,
+        };
+
+        pub const dummy = VTable{
+            .transmit_fn = dummyTransmit,
+            .receive_fn = dummyReceive,
+            .get_received_fn = dummyGetReceived,
+        };
+
         pub fn failingTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
             _ = .{ self, data };
             return error.TransmitError;
@@ -39,6 +51,17 @@ pub const Radio = struct {
         pub fn failingGetReceived(self: *anyopaque) error{ReceiveError}!?[]const u8 {
             _ = self;
             return error.ReceiveError;
+        }
+
+        pub fn dummyTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
+            _ = .{ self, data };
+        }
+        pub fn dummyReceive(self: *anyopaque) error{ReceiveError}!void {
+            _ = self;
+        }
+        pub fn dummyGetReceived(self: *anyopaque) error{ReceiveError}!?[]const u8 {
+            _ = self;
+            return null;
         }
     };
 
@@ -93,14 +116,19 @@ pub const Radio = struct {
         defer chunks.deinit(self.gpa);
         while (remaining.len > 0) {
             var curr_chunk: []const u8 = undefined;
+            var should_break: bool = false;
             if (remaining.len <= self.packet_len_max - 4) {
                 curr_chunk = remaining;
+                should_break = true;
             } else {
                 curr_chunk = remaining[0..(self.packet_len_max - 4)];
                 remaining = remaining[(self.packet_len_max - 4)..];
             }
 
             try chunks.append(self.gpa, curr_chunk);
+            if (should_break) {
+                break;
+            }
         }
 
         if (chunks.items.len > 255) {
@@ -115,15 +143,21 @@ pub const Radio = struct {
             msg_buf[2] = @intCast(i);
             msg_buf[3] = @intCast(curr_chunk.len);
             @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
+            var padding: u32 = 0;
+            if (curr_chunk.len + 4 < self.packet_len_min) {
+                padding = @intCast(self.packet_len_min - (curr_chunk.len + 4));
+                @memset(msg_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
+            }
 
-            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d})", .{
+            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
                 i,
                 chunks.items.len,
                 curr_chunk.len,
                 data.len,
+                padding,
             });
 
-            try self.transmit(msg_buf[0..(curr_chunk.len + 4)]);
+            try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
 
         self.next_egress_packet_id += 1;
@@ -151,6 +185,11 @@ pub const Radio = struct {
             const chunk_num = recv_packet_nn[2];
             const chunk_len = recv_packet_nn[3];
             const payload = recv_packet_nn[4..(4 + chunk_len)];
+
+            Logger.debug(
+                "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
+                .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
+            );
 
             const msg_continued = msg_cont_blk: {
                 if (self.expected_ingress_packet_id) |eipi_nn| {
@@ -192,8 +231,9 @@ pub const Radio = struct {
                     self.link_state = createTurn(io, false);
                     try self.receive();
                 } else {
-                    const first = self.egress_queue.front();
+                    const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
+                        defer self.gpa.free(first_nn);
                         Logger.debug("We're interrupting the silence", .{});
                         self.link_state = createTurn(io, true);
                         try self.chunkAndSend(first_nn);
@@ -205,8 +245,9 @@ pub const Radio = struct {
             .our_turn => |our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    const first = self.egress_queue.front();
+                    const first = self.egress_queue.popFront();
                     if (first) |first_nn| {
+                        defer self.gpa.free(first_nn);
                         try self.chunkAndSend(first_nn);
                     }
                 } else {

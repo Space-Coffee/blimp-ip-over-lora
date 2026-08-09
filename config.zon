@@ -1,0 +1,18 @@
+.{
+    .spi_dev_path = "/dev/spidev0.0",
+    .nrf905 = .{
+        .settings = .{
+            .channel_num = 108,
+            .pa_power = 0b00,
+            .rx_addr = 0x539e69ca,
+            .cryst_freq = 0b011,
+        },
+        .peer_addr = 0x82b7c24d,
+    },
+    // .nrf905 = null,
+    .radio = .{
+        .impl = .nrf905,
+        .packet_len_min = 32,
+        .packet_len_max = 32,
+    },
+}
