@@ -1,0 +1,12 @@
+.{
+    .spi_dev_path = "/dev/spidev0.0",
+    // .nrf905 = .{
+    //     .settings = .{},
+    // },
+    .nrf905 = null,
+    .radio = .{
+        .impl = .dummy,
+        .packet_len_min = 32,
+        .packet_len_max = 32,
+    },
+}

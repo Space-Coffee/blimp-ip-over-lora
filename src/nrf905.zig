@@ -131,6 +131,8 @@ pub const Nrf905 = struct {
 
         try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
         try self.setMode(.tx);
+        try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
+        // try self.setMode(.standby);
 
         const gpio_mask: u64 = @as(u64, 1) << @intCast(self.pins.dr_pin);
         var gpio_val: u64 = undefined;
