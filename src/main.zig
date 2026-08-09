@@ -51,6 +51,7 @@ pub fn main(init: std.process.Init) !void {
                         .dr_pin = 0,
                     },
                     conf_nrf905_nn.settings,
+                    conf_nrf905_nn.peer_addr,
                 );
             _ = try nrf905_inst.checkDevice();
             try nrf905_inst.configDump();

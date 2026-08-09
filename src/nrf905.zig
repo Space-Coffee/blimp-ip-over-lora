@@ -45,6 +45,7 @@ pub const Nrf905 = struct {
         gpio_ctrl: *gpio.GpioCtrl,
         pins: Pins,
         settings: Settings,
+        peer_addr: u32,
     ) !Nrf905 {
         var new_self = Nrf905{
             .io = io,
@@ -53,7 +54,7 @@ pub const Nrf905 = struct {
             .gpio_ctrl = gpio_ctrl,
             .pins = pins,
             .settings = settings,
-            .peer_addr = 0xE7E7E7E7,
+            .peer_addr = peer_addr,
         };
 
         try new_self.setMode(.standby);
@@ -144,7 +145,7 @@ pub const Nrf905 = struct {
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
             _ = try self.checkDevice();
-            Logger.debug("gpio_val = 0x{x}", .{gpio_val});
+            // Logger.debug("gpio_val = 0x{x}", .{gpio_val});
             if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
             }
@@ -171,7 +172,8 @@ pub const Nrf905 = struct {
     pub fn getReceived(self: *Nrf905) !?[32]u8 {
         const gpio_mask: u64 = (@as(u64, 1) << @intCast(self.pins.dr_pin));
         const gpio_val = try self.gpio_ctrl.get(gpio_mask);
-        _ = try self.checkDevice();
+        // _ = try self.checkDevice();
+        // Logger.debug("gpio_val = 0x{x}", .{gpio_val});
 
         if (gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin)) != 0) {
             try self.setMode(.standby);

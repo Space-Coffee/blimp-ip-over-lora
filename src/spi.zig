@@ -34,6 +34,7 @@ pub const Spi = struct {
             "couldn't set bit count per word",
         );
         var buf32: u32 = 100000;
+        // var buf32: u32 = 1000;
         _ = try misc.ioctl_checked(
             fd,
             c.SPI_IOC_WR_MAX_SPEED_HZ,
