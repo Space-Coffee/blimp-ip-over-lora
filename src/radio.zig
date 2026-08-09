@@ -20,10 +20,9 @@ pub const Radio = struct {
     // expected_ingress_packet_chunks_count: ?u8 = null,
     expected_ingress_chunk_num: ?u8 = null,
     ingress_payload_buf: std.ArrayList(u8) = .empty,
-    empty_our_turns: i32 = max_empty_turns,
-
-    const turn_duration_ms: i64 = 800;
-    const max_empty_turns: i32 = 2;
+    empty_turns: i32 = 2,
+    max_empty_turns: i32 = 2,
+    turn_duration_ms: i64 = 800,
 
     pub const VTable = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
@@ -90,12 +89,12 @@ pub const Radio = struct {
         return try self.vt.get_received_fn(self.impl);
     }
 
-    fn createTurn(io: std.Io, our: bool) LinkState {
+    fn createTurn(self: *const Radio, io: std.Io, our: bool) LinkState {
         const until = std.Io.Timestamp.now(
             io,
             .real,
         ).addDuration(
-            .fromMilliseconds(turn_duration_ms),
+            .fromMilliseconds(self.turn_duration_ms),
         );
         if (our) {
             return .{
@@ -197,6 +196,7 @@ pub const Radio = struct {
                 .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
             );
             quick_update = true;
+            self.empty_turns = self.max_empty_turns;
 
             const msg_continued, const prev_packet_lost = msg_cont_blk: {
                 if (self.expected_ingress_packet_id) |eipi_nn| {
@@ -241,7 +241,7 @@ pub const Radio = struct {
             .unknown => {
                 if (recv_msg) |_| {
                     Logger.debug("They interrupted the silence", .{});
-                    self.link_state = createTurn(io, false);
+                    self.link_state = self.createTurn(io, false);
                     try self.receive();
                 } else {
                     // This should decrease likelihood of collisions
@@ -252,9 +252,8 @@ pub const Radio = struct {
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             Logger.debug("We're interrupting the silence", .{});
-                            self.link_state = createTurn(io, true);
+                            self.link_state = self.createTurn(io, true);
                             try self.chunkAndSend(first_nn);
-                            self.empty_our_turns = max_empty_turns;
                         } else {
                             try self.receive();
                         }
@@ -266,20 +265,21 @@ pub const Radio = struct {
             .our_turn => |our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    if (now.durationTo(our_turn.until).nanoseconds > turn_duration_ms * 1000000 / 2) {
+                    if (now.durationTo(our_turn.until).nanoseconds > self.turn_duration_ms * (1000000 / 2)) {
                         const first = self.egress_queue.popFront();
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             try self.chunkAndSend(first_nn);
-                            self.empty_our_turns = max_empty_turns;
                         }
                     } else {
                         try self.receive();
                     }
                 } else {
                     Logger.debug("We're giving the turn back to them", .{});
-                    self.link_state = createTurn(io, false);
-                    self.empty_our_turns -= 1;
+                    self.link_state = self.createTurn(io, false);
+                    if (self.empty_turns >= 0) {
+                        self.empty_turns -= 1;
+                    }
                     try self.receive();
                 }
             },
@@ -288,9 +288,9 @@ pub const Radio = struct {
                     //Still their turn
                     try self.receive();
                 } else {
-                    if (self.empty_our_turns >= 0) {
+                    if (self.empty_turns >= 0) {
                         Logger.debug("We're getting the turn back", .{});
-                        self.link_state = createTurn(io, true);
+                        self.link_state = self.createTurn(io, true);
                     } else {
                         Logger.debug("Back to silence", .{});
                         self.link_state = .unknown;

@@ -17,6 +17,8 @@ pub const ConfigRoot = struct {
         },
         packet_len_min: u32,
         packet_len_max: u32,
+        max_empty_turns: i32,
+        turn_duration_ms: i64,
     },
     tun: struct {
         local_addr: [:0]const u8,

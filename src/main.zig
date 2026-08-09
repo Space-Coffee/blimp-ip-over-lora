@@ -98,6 +98,9 @@ pub fn main(init: std.process.Init) !void {
         .impl = radio_iface_impl,
         .packet_len_min = conf.radio.packet_len_min,
         .packet_len_max = conf.radio.packet_len_max,
+        .empty_turns = conf.radio.max_empty_turns,
+        .max_empty_turns = conf.radio.max_empty_turns,
+        .turn_duration_ms = conf.radio.turn_duration_ms,
     };
     defer radio_iface.deinit();
     // try radio_iface.transmit("Hello world!");
