@@ -189,6 +189,25 @@ pub const Radio = struct {
         try self.transmit(packet_buf);
     }
 
+    fn syncToHeartbeat(self: *Radio, io: std.Io) !void {
+        switch (self.link_state) {
+            .their_turn => |*their_turn| {
+                their_turn.until = std.Io.Timestamp.now(
+                    io,
+                    .real,
+                ).addDuration(
+                    .fromMilliseconds(@divFloor(self.turn_duration_ms, 2)),
+                );
+                // Logger.debug("Synced to heartbeat", .{});
+                self.stats.heartbeat_syncs += 1;
+                return;
+            },
+            else => {},
+        }
+        self.link_state = self.createTurn(io, false);
+        try self.syncToHeartbeat(io);
+    }
+
     pub fn deinit(self: *Radio) void {
         var egress_queue_iter = self.egress_queue.iterator();
         while (egress_queue_iter.next()) |msg| {
@@ -270,6 +289,9 @@ pub const Radio = struct {
         }
 
         // Link logic
+        if (is_heartbeat) {
+            try self.syncToHeartbeat(io);
+        }
         const now = std.Io.Timestamp.now(io, .real);
         switch (self.link_state) {
             .unknown => {
@@ -324,17 +346,6 @@ pub const Radio = struct {
             },
             .their_turn => |*their_turn| {
                 if (now.durationTo(their_turn.until).nanoseconds > 0) {
-                    if (is_heartbeat) {
-                        their_turn.until = std.Io.Timestamp.now(
-                            io,
-                            .real,
-                        ).addDuration(
-                            .fromMilliseconds(@divFloor(self.turn_duration_ms, 2)),
-                        );
-                        // Logger.debug("Synced to heartbeat", .{});
-                        self.stats.heartbeat_syncs += 1;
-                    }
-
                     //Still their turn
                     try self.receive();
                 } else {
