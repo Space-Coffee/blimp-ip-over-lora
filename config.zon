@@ -14,8 +14,8 @@
         .impl = .nrf905,
         .packet_len_min = 32,
         .packet_len_max = 32,
-        .max_empty_turns = 2,
-        .turn_duration_ms = 800,
+        .max_empty_turns = 3,
+        .turn_duration_ms = 200,
     },
     .tun = .{
         .local_addr = "10.12.34.1",

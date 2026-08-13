@@ -25,6 +25,13 @@ pub const Radio = struct {
     empty_turns: i32 = 2,
     max_empty_turns: i32 = 2,
     turn_duration_ms: i64 = 800,
+    stats: struct {
+        from: std.Io.Timestamp = .zero,
+        payload_bytes_tx: u32 = 0,
+        payload_bytes_rx: u32 = 0,
+        lost_messages: u32 = 0,
+        heartbeat_syncs: u32 = 0,
+    } = .{},
 
     pub const VTable = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
@@ -170,6 +177,7 @@ pub const Radio = struct {
         }
 
         self.next_egress_packet_id +%= 1;
+        self.stats.payload_bytes_tx += @intCast(data.len);
     }
 
     fn sendHeartbeat(self: *Radio) !void {
@@ -198,6 +206,7 @@ pub const Radio = struct {
         self: *Radio,
         io: std.Io,
     ) !struct { recv_msg: ?[]const u8, quick_update: bool } {
+        // Reception
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
         var is_heartbeat = false;
@@ -209,10 +218,10 @@ pub const Radio = struct {
             const chunk_len = recv_packet_nn[3];
             const payload = recv_packet_nn[4..(4 + chunk_len)];
 
-            Logger.debug(
-                "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
-                .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
-            );
+            // Logger.debug(
+            //     "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
+            //     .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
+            // );
             quick_update = true;
             self.empty_turns = self.max_empty_turns;
 
@@ -235,6 +244,7 @@ pub const Radio = struct {
                         Logger.warn("Packet with id {d} has been lost!", .{
                             self.expected_ingress_packet_id.?,
                         });
+                        self.stats.lost_messages += 1;
                     }
 
                     self.ingress_payload_buf.clearRetainingCapacity();
@@ -248,6 +258,7 @@ pub const Radio = struct {
 
                     if (chunk_num == packet_chunks_count - 1) {
                         recv_msg = try self.ingress_payload_buf.toOwnedSlice(self.gpa);
+                        self.stats.payload_bytes_rx += @intCast(recv_msg.?.len);
                         self.expected_ingress_packet_id = null;
                     } else {
                         self.expected_ingress_chunk_num = chunk_num + 1;
@@ -258,6 +269,7 @@ pub const Radio = struct {
             }
         }
 
+        // Link logic
         const now = std.Io.Timestamp.now(io, .real);
         switch (self.link_state) {
             .unknown => {
@@ -319,7 +331,8 @@ pub const Radio = struct {
                         ).addDuration(
                             .fromMilliseconds(@divFloor(self.turn_duration_ms, 2)),
                         );
-                        Logger.debug("Synced to heartbeat", .{});
+                        // Logger.debug("Synced to heartbeat", .{});
+                        self.stats.heartbeat_syncs += 1;
                     }
 
                     //Still their turn
@@ -334,6 +347,27 @@ pub const Radio = struct {
                     }
                 }
             },
+        }
+
+        // Link stats
+        if (self.stats.from.nanoseconds == 0) {
+            self.stats.from = std.Io.Timestamp.now(io, .real);
+        }
+        if (self.stats.from.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds() >= 5000) {
+            const time_s: f32 = @as(f32, @floatFromInt(self.stats.from.durationTo(.now(io, .real)).toMicroseconds())) / 1000000.0;
+            const bps_tx: f32 = @as(f32, @floatFromInt(self.stats.payload_bytes_tx)) / time_s;
+            const bps_rx: f32 = @as(f32, @floatFromInt(self.stats.payload_bytes_rx)) / time_s;
+            // const eps: f32 = @as(f32, @floatFromInt(self.stats.lost_messages)) / time_s;
+
+            Logger.info("Link stats: bps_tx={d}, bps_rx={d}, lost={d}, heartbeat_syncs={d}, egress_len={d}", .{
+                bps_tx,
+                bps_rx,
+                self.stats.lost_messages,
+                self.stats.heartbeat_syncs,
+                self.egress_queue.len,
+            });
+            self.stats = .{};
+            self.stats.from = std.Io.Timestamp.now(io, .real);
         }
 
         return .{

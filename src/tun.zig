@@ -165,7 +165,7 @@ pub const Tun = struct {
             switch (select_result) {
                 .tun_read => |tun_read| {
                     const bytes_read = try tun_read;
-                    Logger.debug("Read {d} bytes through tun", .{bytes_read});
+                    // Logger.debug("Read {d} bytes through tun", .{bytes_read});
                     const msg_copy = try gpa.dupe(u8, reader_buf[0..bytes_read]);
                     try tun2radio_queue.putOne(io, msg_copy);
 
