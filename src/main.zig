@@ -18,6 +18,7 @@ pub fn main(init: std.process.Init) !void {
     const conf_content_sentinel = try conf_content_writer_alloc.toOwnedSliceSentinel(0);
     defer init.gpa.free(conf_content_sentinel);
     const conf = try std.zon.parse.fromSliceAlloc(config.ConfigRoot, init.gpa, conf_content_sentinel, null, .{});
+    defer std.zon.parse.free(init.gpa, conf);
 
     std.log.scoped(.config).info("Configuration file read successfully!", .{});
 
