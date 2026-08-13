@@ -7,6 +7,8 @@ const std = @import("std");
 // [3] chunk_len
 // [4..] payload
 
+// Heartbeat: packet_id=0, packet_chunks_count=0, chunk_num=255, chunk_len=0
+
 pub const Radio = struct {
     gpa: std.mem.Allocator,
     vt: VTable,
@@ -68,8 +70,13 @@ pub const Radio = struct {
 
     const LinkState = union(enum) {
         unknown: void,
-        their_turn: struct { until: std.Io.Timestamp },
-        our_turn: struct { until: std.Io.Timestamp },
+        their_turn: struct {
+            until: std.Io.Timestamp,
+        },
+        our_turn: struct {
+            until: std.Io.Timestamp,
+            sent_heartbeat: bool,
+        },
     };
 
     const Logger = std.log.scoped(.radio_link);
@@ -100,6 +107,7 @@ pub const Radio = struct {
             return .{
                 .our_turn = .{
                     .until = until,
+                    .sent_heartbeat = false,
                 },
             };
         } else {
@@ -136,18 +144,18 @@ pub const Radio = struct {
             return error.MessageTooLarge;
         }
 
-        var msg_buf = try self.gpa.alloc(u8, self.packet_len_max);
-        defer self.gpa.free(msg_buf);
+        var packet_buf = try self.gpa.alloc(u8, self.packet_len_max);
+        defer self.gpa.free(packet_buf);
         for (chunks.items, 0..) |curr_chunk, i| {
-            msg_buf[0] = self.next_egress_packet_id;
-            msg_buf[1] = @intCast(chunks.items.len);
-            msg_buf[2] = @intCast(i);
-            msg_buf[3] = @intCast(curr_chunk.len);
-            @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
+            packet_buf[0] = self.next_egress_packet_id;
+            packet_buf[1] = @intCast(chunks.items.len);
+            packet_buf[2] = @intCast(i);
+            packet_buf[3] = @intCast(curr_chunk.len);
+            @memcpy(packet_buf[4..(curr_chunk.len + 4)], curr_chunk);
             var padding: u32 = 0;
             if (curr_chunk.len + 4 < self.packet_len_min) {
                 padding = @intCast(self.packet_len_min - (curr_chunk.len + 4));
-                @memset(msg_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
+                @memset(packet_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
             }
 
             // Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
@@ -158,10 +166,19 @@ pub const Radio = struct {
             //     padding,
             // });
 
-            try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
+            try self.transmit(packet_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
 
         self.next_egress_packet_id +%= 1;
+    }
+
+    fn sendHeartbeat(self: *Radio) !void {
+        var packet_buf = try self.gpa.alloc(u8, self.packet_len_min);
+        defer self.gpa.free(packet_buf);
+        @memset(packet_buf, 0);
+        packet_buf[2] = 255;
+
+        try self.transmit(packet_buf);
     }
 
     pub fn deinit(self: *Radio) void {
@@ -183,6 +200,7 @@ pub const Radio = struct {
     ) !struct { recv_msg: ?[]const u8, quick_update: bool } {
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
+        var is_heartbeat = false;
         var quick_update = false;
         if (recv_packet) |recv_packet_nn| {
             const packet_id = recv_packet_nn[0];
@@ -198,41 +216,45 @@ pub const Radio = struct {
             quick_update = true;
             self.empty_turns = self.max_empty_turns;
 
-            const msg_continued, const prev_packet_lost = msg_cont_blk: {
-                if (self.expected_ingress_packet_id) |eipi_nn| {
-                    if (eipi_nn == packet_id) {
-                        break :msg_cont_blk .{ true, false };
+            is_heartbeat = (packet_id == 0 and packet_chunks_count == 0 and chunk_num == 255 and chunk_len == 0);
+
+            if (!is_heartbeat) {
+                const msg_continued, const prev_packet_lost = msg_cont_blk: {
+                    if (self.expected_ingress_packet_id) |eipi_nn| {
+                        if (eipi_nn == packet_id) {
+                            break :msg_cont_blk .{ true, false };
+                        } else {
+                            break :msg_cont_blk .{ false, true };
+                        }
                     } else {
-                        break :msg_cont_blk .{ false, true };
+                        break :msg_cont_blk .{ false, false };
+                    }
+                };
+                if (!msg_continued) {
+                    if (prev_packet_lost) {
+                        Logger.warn("Packet with id {d} has been lost!", .{
+                            self.expected_ingress_packet_id.?,
+                        });
+                    }
+
+                    self.ingress_payload_buf.clearRetainingCapacity();
+                    self.expected_ingress_packet_id = packet_id;
+                    // self.expected_ingress_packet_chunks_count = packet_chunks_count;
+                    self.expected_ingress_chunk_num = 0;
+                }
+
+                if (self.expected_ingress_chunk_num == @as(?u8, chunk_num)) {
+                    try self.ingress_payload_buf.appendSlice(self.gpa, payload);
+
+                    if (chunk_num == packet_chunks_count - 1) {
+                        recv_msg = try self.ingress_payload_buf.toOwnedSlice(self.gpa);
+                        self.expected_ingress_packet_id = null;
+                    } else {
+                        self.expected_ingress_chunk_num = chunk_num + 1;
                     }
                 } else {
-                    break :msg_cont_blk .{ false, false };
-                }
-            };
-            if (!msg_continued) {
-                if (prev_packet_lost) {
-                    Logger.warn("Packet with id {d} has been lost!", .{
-                        self.expected_ingress_packet_id.?,
-                    });
-                }
-
-                self.ingress_payload_buf.clearRetainingCapacity();
-                self.expected_ingress_packet_id = packet_id;
-                // self.expected_ingress_packet_chunks_count = packet_chunks_count;
-                self.expected_ingress_chunk_num = 0;
-            }
-
-            if (self.expected_ingress_chunk_num == @as(?u8, chunk_num)) {
-                try self.ingress_payload_buf.appendSlice(self.gpa, payload);
-
-                if (chunk_num == packet_chunks_count - 1) {
-                    recv_msg = try self.ingress_payload_buf.toOwnedSlice(self.gpa);
                     self.expected_ingress_packet_id = null;
-                } else {
-                    self.expected_ingress_chunk_num = chunk_num + 1;
                 }
-            } else {
-                self.expected_ingress_packet_id = null;
             }
         }
 
@@ -262,7 +284,7 @@ pub const Radio = struct {
                     }
                 }
             },
-            .our_turn => |our_turn| {
+            .our_turn => |*our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
                     if (now.durationTo(our_turn.until).nanoseconds > self.turn_duration_ms * (1000000 / 2)) {
@@ -272,6 +294,11 @@ pub const Radio = struct {
                             try self.chunkAndSend(first_nn);
                         }
                     } else {
+                        if (!our_turn.sent_heartbeat) {
+                            try self.sendHeartbeat();
+                            our_turn.sent_heartbeat = true;
+                        }
+
                         try self.receive();
                     }
                 } else {
@@ -283,8 +310,18 @@ pub const Radio = struct {
                     try self.receive();
                 }
             },
-            .their_turn => |their_turn| {
+            .their_turn => |*their_turn| {
                 if (now.durationTo(their_turn.until).nanoseconds > 0) {
+                    if (is_heartbeat) {
+                        their_turn.until = std.Io.Timestamp.now(
+                            io,
+                            .real,
+                        ).addDuration(
+                            .fromMilliseconds(@divFloor(self.turn_duration_ms, 2)),
+                        );
+                        Logger.debug("Synced to heartbeat", .{});
+                    }
+
                     //Still their turn
                     try self.receive();
                 } else {
