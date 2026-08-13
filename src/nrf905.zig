@@ -130,7 +130,7 @@ pub const Nrf905 = struct {
         @memcpy(msg_buf[1..(payload.len + 1)], payload);
         try self.spi_dev.transact(&msg_buf, &trash_buf);
 
-        try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
+        // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
         try self.setMode(.tx);
         // try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
         // try self.setMode(.standby);
@@ -140,7 +140,7 @@ pub const Nrf905 = struct {
         var retry_count: u32 = 0;
         const max_retries: u32 = 200;
         while (retry_count < max_retries) {
-            try std.Io.sleep(self.io, .fromMilliseconds(2), .real);
+            try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
@@ -152,7 +152,7 @@ pub const Nrf905 = struct {
         }
 
         try self.setMode(.standby);
-        try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
+        // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
 
         if (retry_count >= max_retries) {
             Logger.warn("Max retry count ({d}) exceeded!", .{max_retries});

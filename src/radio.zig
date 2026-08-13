@@ -150,13 +150,13 @@ pub const Radio = struct {
                 @memset(msg_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
             }
 
-            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
-                i,
-                chunks.items.len,
-                curr_chunk.len,
-                data.len,
-                padding,
-            });
+            // Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
+            //     i,
+            //     chunks.items.len,
+            //     curr_chunk.len,
+            //     data.len,
+            //     padding,
+            // });
 
             try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
@@ -275,7 +275,7 @@ pub const Radio = struct {
                         try self.receive();
                     }
                 } else {
-                    Logger.debug("We're giving the turn back to them", .{});
+                    // Logger.debug("We're giving the turn back to them", .{});
                     self.link_state = self.createTurn(io, false);
                     if (self.empty_turns >= 0) {
                         self.empty_turns -= 1;
@@ -289,7 +289,7 @@ pub const Radio = struct {
                     try self.receive();
                 } else {
                     if (self.empty_turns >= 0) {
-                        Logger.debug("We're getting the turn back", .{});
+                        // Logger.debug("We're getting the turn back", .{});
                         self.link_state = self.createTurn(io, true);
                     } else {
                         Logger.debug("Back to silence", .{});

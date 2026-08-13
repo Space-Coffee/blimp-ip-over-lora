@@ -33,7 +33,7 @@ pub const Spi = struct {
             @intFromPtr(&buf8),
             "couldn't set bit count per word",
         );
-        var buf32: u32 = 100000;
+        var buf32: u32 = 1000000;
         // var buf32: u32 = 1000;
         _ = try misc.ioctl_checked(
             fd,

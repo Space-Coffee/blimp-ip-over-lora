@@ -151,7 +151,7 @@ pub fn main(init: std.process.Init) !void {
                     std.Io.sleep,
                     .{
                         init.io,
-                        std.Io.Duration.fromMicroseconds(1000),
+                        std.Io.Duration.fromMicroseconds(200),
                         std.Io.Clock.real,
                     },
                 );
