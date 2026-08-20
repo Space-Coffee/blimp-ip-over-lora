@@ -47,6 +47,7 @@ pub fn main(init: std.process.Init) !void {
         "ip-over-lora",
         conf.tun.local_addr,
         conf.tun.netmask,
+        conf.tun.mtu,
     );
     defer tun_dev.deinit(init.io, init.gpa);
 

@@ -14,6 +14,7 @@ pub const Tun = struct {
         tun_name: []const u8,
         local_addr: [:0]const u8,
         netmask: [:0]const u8,
+        mtu: u32,
     ) !Tun {
         const tun_dev_file = try std.Io.Dir.openFileAbsolute(
             io,
@@ -108,6 +109,16 @@ pub const Tun = struct {
             c.SIOCSIFFLAGS,
             @intFromPtr(&ifr),
             "couldn't set TUN flags",
+        );
+
+        // MTU
+        ifr = std.mem.zeroes(c.ifreq);
+        ifr.ifr_ifru.ifru_mtu = @intCast(mtu);
+        _ = try misc.ioctl_checked(
+            socket.handle,
+            c.SIOCSIFMTU,
+            @intFromPtr(&ifr),
+            "couldn't set TUN MTU",
         );
 
         socket.close(io);

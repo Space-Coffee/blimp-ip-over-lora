@@ -23,5 +23,6 @@ pub const ConfigRoot = struct {
     tun: struct {
         local_addr: [:0]const u8,
         netmask: [:0]const u8,
+        mtu: u32,
     },
 };
