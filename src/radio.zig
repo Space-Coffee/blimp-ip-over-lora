@@ -25,12 +25,14 @@ pub const Radio = struct {
     empty_turns: i32 = 2,
     max_empty_turns: i32 = 2,
     turn_duration_ms: i64 = 800,
+    heartbeat_offset_ms: i64 = 650,
     stats: struct {
         from: std.Io.Timestamp = .zero,
         payload_bytes_tx: u32 = 0,
         payload_bytes_rx: u32 = 0,
         lost_messages: u32 = 0,
         heartbeat_syncs: u32 = 0,
+        heartbeat_sync_total_shift_us: u64 = 0,
     } = .{},
 
     pub const VTable = struct {
@@ -192,14 +194,20 @@ pub const Radio = struct {
     fn syncToHeartbeat(self: *Radio, io: std.Io) !void {
         switch (self.link_state) {
             .their_turn => |*their_turn| {
-                their_turn.until = std.Io.Timestamp.now(
+                const now = std.Io.Timestamp.now(
                     io,
                     .real,
-                ).addDuration(
-                    .fromMilliseconds(@divFloor(self.turn_duration_ms, 2)),
                 );
+                const prev_dur = now.durationTo(their_turn.until);
+                const desired_dur_ms = self.turn_duration_ms - self.heartbeat_offset_ms;
+                their_turn.until = now.addDuration(
+                    .fromMilliseconds(desired_dur_ms),
+                );
+
                 // Logger.debug("Synced to heartbeat", .{});
+                const shift_us = @abs(prev_dur.toMicroseconds() - (desired_dur_ms * 1000));
                 self.stats.heartbeat_syncs += 1;
+                self.stats.heartbeat_sync_total_shift_us += shift_us;
                 return;
             },
             else => {},
@@ -321,7 +329,7 @@ pub const Radio = struct {
             .our_turn => |*our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    if (now.durationTo(our_turn.until).nanoseconds > self.turn_duration_ms * (1000000 / 2)) {
+                    if (now.durationTo(our_turn.until).nanoseconds > (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
                         const first = self.egress_queue.popFront();
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
@@ -370,11 +378,12 @@ pub const Radio = struct {
             const bps_rx: f32 = @as(f32, @floatFromInt(self.stats.payload_bytes_rx)) / time_s;
             // const eps: f32 = @as(f32, @floatFromInt(self.stats.lost_messages)) / time_s;
 
-            Logger.info("Link stats: bps_tx={d}, bps_rx={d}, lost={d}, heartbeat_syncs={d}, egress_len={d}", .{
+            Logger.info("Link stats: bps_tx={d: >8.1}, bps_rx={d: >8.1}, lost={d: >4}, heartbeat_syncs={d: >3}, total_shift={d: >8}us, egress_len={d: >3}", .{
                 bps_tx,
                 bps_rx,
                 self.stats.lost_messages,
                 self.stats.heartbeat_syncs,
+                self.stats.heartbeat_sync_total_shift_us,
                 self.egress_queue.len,
             });
             self.stats = .{};

@@ -103,6 +103,11 @@ pub fn main(init: std.process.Init) !void {
         .empty_turns = conf.radio.max_empty_turns,
         .max_empty_turns = conf.radio.max_empty_turns,
         .turn_duration_ms = conf.radio.turn_duration_ms,
+        .heartbeat_offset_ms = @intFromFloat(
+            @as(f32, @floatFromInt(
+                conf.radio.turn_duration_ms,
+            )) * conf.radio.heartbeat_offset_frac,
+        ),
     };
     defer radio_iface.deinit();
     // try radio_iface.transmit("Hello world!");

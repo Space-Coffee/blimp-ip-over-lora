@@ -102,7 +102,7 @@ pub const Tun = struct {
         // I'm not sure what is their use then.
         ifr.ifr_ifru.ifru_flags |= @as(
             c_short,
-            @truncate(c.IFF_UP | c.IFF_LOWER_UP | c.IFF_NOARP | c.IFF_MULTICAST | c.IFF_POINTOPOINT | c.IFF_RUNNING),
+            @truncate(c.IFF_UP | c.IFF_NOARP | c.IFF_POINTOPOINT | c.IFF_RUNNING),
         );
         _ = try misc.ioctl_checked(
             socket.handle,
