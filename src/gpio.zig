@@ -70,7 +70,7 @@ pub const GpioCtrl = struct {
 
         if (in_lines.len > 0) {
             var in_req = std.mem.zeroes(c.gpio_v2_line_request);
-            in_req.config.flags = c.GPIO_V2_LINE_FLAG_INPUT;
+            in_req.config.flags = c.GPIO_V2_LINE_FLAG_INPUT | c.GPIO_V2_LINE_FLAG_EDGE_RISING;
             in_req.config.num_attrs = 0; // do we need attributes?
             @memcpy(in_req.offsets[0..in_lines.len], in_lines);
             in_req.num_lines = @intCast(in_lines.len);
@@ -90,6 +90,16 @@ pub const GpioCtrl = struct {
                 return error.GpioLineOpenFailed;
             }
             self.in_lines_fd = in_req.fd;
+
+            var flags: std.os.linux.O = @bitCast(
+                @as(u32, @intCast(std.os.linux.fcntl(
+                    self.in_lines_fd,
+                    std.os.linux.F.GETFL,
+                    0,
+                ))),
+            );
+            flags.NONBLOCK = true;
+            _ = std.os.linux.fcntl(self.in_lines_fd, std.os.linux.F.SETFL, @as(u32, @bitCast(flags)));
         } else {
             self.in_lines_fd = -1;
         }
@@ -131,5 +141,22 @@ pub const GpioCtrl = struct {
             "couldn't get GPIO values",
         );
         return vals.bits;
+    }
+
+    pub fn wait(self: *GpioCtrl) !void {
+        var poll_fds = [_]std.os.linux.pollfd{.{
+            .fd = self.in_lines_fd,
+            .events = std.os.linux.POLL.IN,
+            .revents = 0,
+        }};
+        var buf: [512]u8 = undefined;
+        _ = try std.posix.poll(&poll_fds, 80);
+        _ = std.posix.read(self.in_lines_fd, &buf) catch |err| {
+            if (err == error.WouldBlock) {
+                return;
+            } else {
+                return err;
+            }
+        };
     }
 };

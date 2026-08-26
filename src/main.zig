@@ -141,30 +141,47 @@ pub fn main(init: std.process.Init) !void {
         const select_result = try select.await();
         switch (select_result) {
             .sleep => {
+                var update_result: @typeInfo(
+                    @typeInfo(
+                        @TypeOf(radio.Radio.update),
+                    ).@"fn".return_type.?,
+                ).error_union.payload = undefined;
                 while (true) {
-                    const update_result = try radio_iface.update(init.io);
+                    update_result = try radio_iface.update(init.io);
                     if (update_result.recv_msg) |recv_msg_nn| {
                         // defer init.gpa.free(recv_msg_nn);
                         try radio2tun_queue.putOne(init.io, recv_msg_nn);
                     }
 
-                    if (!update_result.quick_update) {
+                    if (update_result.update_mode != .quick) {
                         break;
                     }
                 }
 
-                try select.concurrent(
-                    .sleep,
-                    std.Io.sleep,
-                    .{
-                        init.io,
-                        std.Io.Duration.fromMicroseconds(200),
-                        std.Io.Clock.real,
-                    },
-                );
+                if (update_result.update_mode == .normal) {
+                    try select.concurrent(
+                        .sleep,
+                        std.Io.sleep,
+                        .{
+                            init.io,
+                            std.Io.Duration.fromMicroseconds(200),
+                            std.Io.Clock.real,
+                        },
+                    );
+                } else {
+                    // std.log.debug("Polling...", .{});
+                    try select.concurrent(
+                        .sleep,
+                        radio.Radio.wait,
+                        .{
+                            &radio_iface,
+                        },
+                    );
+                }
             },
             .tun_queue_read => |tun_queue_read| {
                 const msg = try tun_queue_read;
+                // std.log.debug("Sending message from tun to radio", .{});
                 try radio_iface.sendMessage(msg);
 
                 try select.concurrent(

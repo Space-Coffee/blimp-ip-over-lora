@@ -199,6 +199,7 @@ pub const Nrf905 = struct {
             .transmit_fn = interfaceTransmit,
             .receive_fn = interfaceReceive,
             .get_received_fn = interfaceGetReceived,
+            .wait_fn = interfaceWait,
         };
     }
 
@@ -253,5 +254,10 @@ pub const Nrf905 = struct {
             return msg;
         }
         return null;
+    }
+
+    fn interfaceWait(self: *anyopaque) error{WaitError}!void {
+        const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
+        self_typed.gpio_ctrl.wait() catch return error.WaitError;
     }
 };
