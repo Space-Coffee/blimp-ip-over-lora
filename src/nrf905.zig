@@ -110,9 +110,9 @@ pub const Nrf905 = struct {
             return error.IllegalLength;
         }
 
-        Logger.debug("Transmitting a packet with length {d}", .{
-            payload.len,
-        });
+        // Logger.debug("Transmitting a packet with length {d}", .{
+        //     payload.len,
+        // });
 
         var msg_buf = std.mem.zeroes([33]u8);
         var trash_buf: [33]u8 = undefined;
@@ -130,9 +130,9 @@ pub const Nrf905 = struct {
         @memcpy(msg_buf[1..(payload.len + 1)], payload);
         try self.spi_dev.transact(&msg_buf, &trash_buf);
 
-        try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
+        // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
         try self.setMode(.tx);
-        try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
+        // try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
         // try self.setMode(.standby);
 
         const gpio_mask: u64 = @as(u64, 1) << @intCast(self.pins.dr_pin);
@@ -140,11 +140,11 @@ pub const Nrf905 = struct {
         var retry_count: u32 = 0;
         const max_retries: u32 = 200;
         while (retry_count < max_retries) {
-            try std.Io.sleep(self.io, .fromMilliseconds(2), .real);
+            try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
-            _ = try self.checkDevice();
+            // _ = try self.checkDevice();
             // Logger.debug("gpio_val = 0x{x}", .{gpio_val});
             if ((gpio_val & (@as(u64, 1) << @intCast(self.pins.dr_pin))) != 0) {
                 break;
@@ -152,21 +152,22 @@ pub const Nrf905 = struct {
         }
 
         try self.setMode(.standby);
+        // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
 
         if (retry_count >= max_retries) {
             Logger.warn("Max retry count ({d}) exceeded!", .{max_retries});
             return error.TooManyRetries;
         } else {
-            Logger.debug("Transmit took {d} retries", .{retry_count});
+            // Logger.debug("Transmit took {d} retries", .{retry_count});
         }
 
-        Logger.debug("Transmission complete", .{});
+        // Logger.debug("Transmission complete", .{});
     }
 
     pub fn receive(self: *Nrf905) !void {
         try self.setMode(.rx);
 
-        try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
+        // try std.Io.sleep(self.io, .fromMilliseconds(1), .real);
     }
 
     pub fn getReceived(self: *Nrf905) !?[32]u8 {
@@ -183,7 +184,7 @@ pub const Nrf905 = struct {
             tx_msg_buf[0] = 0b00100100;
             try self.spi_dev.transact(&tx_msg_buf, &rx_msg_buf);
 
-            Logger.debug("Received a packet", .{});
+            // Logger.debug("Received a packet", .{});
 
             var result: [32]u8 = undefined;
             @memcpy(&result, rx_msg_buf[1..33]);

@@ -14,5 +14,13 @@
         .impl = .nrf905,
         .packet_len_min = 32,
         .packet_len_max = 32,
+        .max_empty_turns = 3,
+        .turn_duration_ms = 200,
+        .heartbeat_offset_frac = 0.8,
+    },
+    .tun = .{
+        .local_addr = "10.12.34.1",
+        .netmask = "255.255.255.0",
+        .mtu = 256,
     },
 }

@@ -7,6 +7,8 @@ const std = @import("std");
 // [3] chunk_len
 // [4..] payload
 
+// Heartbeat: packet_id=0, packet_chunks_count=0, chunk_num=255, chunk_len=0
+
 pub const Radio = struct {
     gpa: std.mem.Allocator,
     vt: VTable,
@@ -20,8 +22,18 @@ pub const Radio = struct {
     // expected_ingress_packet_chunks_count: ?u8 = null,
     expected_ingress_chunk_num: ?u8 = null,
     ingress_payload_buf: std.ArrayList(u8) = .empty,
-
-    const turn_duration_ms: i64 = 500;
+    empty_turns: i32 = 2,
+    max_empty_turns: i32 = 2,
+    turn_duration_ms: i64 = 800,
+    heartbeat_offset_ms: i64 = 650,
+    stats: struct {
+        from: std.Io.Timestamp = .zero,
+        payload_bytes_tx: u32 = 0,
+        payload_bytes_rx: u32 = 0,
+        lost_messages: u32 = 0,
+        heartbeat_syncs: u32 = 0,
+        heartbeat_sync_total_shift_us: u64 = 0,
+    } = .{},
 
     pub const VTable = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
@@ -67,8 +79,13 @@ pub const Radio = struct {
 
     const LinkState = union(enum) {
         unknown: void,
-        their_turn: struct { until: std.Io.Timestamp },
-        our_turn: struct { until: std.Io.Timestamp },
+        their_turn: struct {
+            until: std.Io.Timestamp,
+        },
+        our_turn: struct {
+            until: std.Io.Timestamp,
+            sent_heartbeat: bool,
+        },
     };
 
     const Logger = std.log.scoped(.radio_link);
@@ -88,17 +105,18 @@ pub const Radio = struct {
         return try self.vt.get_received_fn(self.impl);
     }
 
-    fn createTurn(io: std.Io, our: bool) LinkState {
+    fn createTurn(self: *const Radio, io: std.Io, our: bool) LinkState {
         const until = std.Io.Timestamp.now(
             io,
             .real,
         ).addDuration(
-            .fromMilliseconds(turn_duration_ms),
+            .fromMilliseconds(self.turn_duration_ms),
         );
         if (our) {
             return .{
                 .our_turn = .{
                     .until = until,
+                    .sent_heartbeat = false,
                 },
             };
         } else {
@@ -135,32 +153,67 @@ pub const Radio = struct {
             return error.MessageTooLarge;
         }
 
-        var msg_buf = try self.gpa.alloc(u8, self.packet_len_max);
-        defer self.gpa.free(msg_buf);
+        var packet_buf = try self.gpa.alloc(u8, self.packet_len_max);
+        defer self.gpa.free(packet_buf);
         for (chunks.items, 0..) |curr_chunk, i| {
-            msg_buf[0] = self.next_egress_packet_id;
-            msg_buf[1] = @intCast(chunks.items.len);
-            msg_buf[2] = @intCast(i);
-            msg_buf[3] = @intCast(curr_chunk.len);
-            @memcpy(msg_buf[4..(curr_chunk.len + 4)], curr_chunk);
+            packet_buf[0] = self.next_egress_packet_id;
+            packet_buf[1] = @intCast(chunks.items.len);
+            packet_buf[2] = @intCast(i);
+            packet_buf[3] = @intCast(curr_chunk.len);
+            @memcpy(packet_buf[4..(curr_chunk.len + 4)], curr_chunk);
             var padding: u32 = 0;
             if (curr_chunk.len + 4 < self.packet_len_min) {
                 padding = @intCast(self.packet_len_min - (curr_chunk.len + 4));
-                @memset(msg_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
+                @memset(packet_buf[(curr_chunk.len + 4)..self.packet_len_min], 0);
             }
 
-            Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
-                i,
-                chunks.items.len,
-                curr_chunk.len,
-                data.len,
-                padding,
-            });
+            // Logger.debug("Sending message chunk, #{d} out of {d}, length {d} (total {d}), padding {d}", .{
+            //     i,
+            //     chunks.items.len,
+            //     curr_chunk.len,
+            //     data.len,
+            //     padding,
+            // });
 
-            try self.transmit(msg_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
+            try self.transmit(packet_buf[0..(@max(curr_chunk.len + 4, self.packet_len_min))]);
         }
 
-        self.next_egress_packet_id += 1;
+        self.next_egress_packet_id +%= 1;
+        self.stats.payload_bytes_tx += @intCast(data.len);
+    }
+
+    fn sendHeartbeat(self: *Radio) !void {
+        var packet_buf = try self.gpa.alloc(u8, self.packet_len_min);
+        defer self.gpa.free(packet_buf);
+        @memset(packet_buf, 0);
+        packet_buf[2] = 255;
+
+        try self.transmit(packet_buf);
+    }
+
+    fn syncToHeartbeat(self: *Radio, io: std.Io) !void {
+        switch (self.link_state) {
+            .their_turn => |*their_turn| {
+                const now = std.Io.Timestamp.now(
+                    io,
+                    .real,
+                );
+                const prev_dur = now.durationTo(their_turn.until);
+                const desired_dur_ms = self.turn_duration_ms - self.heartbeat_offset_ms;
+                their_turn.until = now.addDuration(
+                    .fromMilliseconds(desired_dur_ms),
+                );
+
+                // Logger.debug("Synced to heartbeat", .{});
+                const shift_us = @abs(prev_dur.toMicroseconds() - (desired_dur_ms * 1000));
+                self.stats.heartbeat_syncs += 1;
+                self.stats.heartbeat_sync_total_shift_us += shift_us;
+                return;
+            },
+            else => {},
+        }
+        self.link_state = self.createTurn(io, false);
+        try self.syncToHeartbeat(io);
     }
 
     pub fn deinit(self: *Radio) void {
@@ -176,9 +229,15 @@ pub const Radio = struct {
         try self.egress_queue.pushBack(self.gpa, data);
     }
 
-    pub fn update(self: *Radio, io: std.Io) !?[]const u8 {
+    pub fn update(
+        self: *Radio,
+        io: std.Io,
+    ) !struct { recv_msg: ?[]const u8, quick_update: bool } {
+        // Reception
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
+        var is_heartbeat = false;
+        var quick_update = false;
         if (recv_packet) |recv_packet_nn| {
             const packet_id = recv_packet_nn[0];
             const packet_chunks_count = recv_packet_nn[1];
@@ -186,83 +245,121 @@ pub const Radio = struct {
             const chunk_len = recv_packet_nn[3];
             const payload = recv_packet_nn[4..(4 + chunk_len)];
 
-            Logger.debug(
-                "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
-                .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
-            );
+            // Logger.debug(
+            //     "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
+            //     .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
+            // );
+            quick_update = true;
+            self.empty_turns = self.max_empty_turns;
 
-            const msg_continued = msg_cont_blk: {
-                if (self.expected_ingress_packet_id) |eipi_nn| {
-                    if (eipi_nn == packet_id) {
-                        break :msg_cont_blk true;
+            is_heartbeat = (packet_id == 0 and packet_chunks_count == 0 and chunk_num == 255 and chunk_len == 0);
+
+            if (!is_heartbeat) {
+                const msg_continued, const prev_packet_lost = msg_cont_blk: {
+                    if (self.expected_ingress_packet_id) |eipi_nn| {
+                        if (eipi_nn == packet_id) {
+                            break :msg_cont_blk .{ true, false };
+                        } else {
+                            break :msg_cont_blk .{ false, true };
+                        }
                     } else {
-                        break :msg_cont_blk false;
+                        break :msg_cont_blk .{ false, false };
+                    }
+                };
+                if (!msg_continued) {
+                    if (prev_packet_lost) {
+                        Logger.warn("Packet with id {d} has been lost!", .{
+                            self.expected_ingress_packet_id.?,
+                        });
+                        self.stats.lost_messages += 1;
+                    }
+
+                    self.ingress_payload_buf.clearRetainingCapacity();
+                    self.expected_ingress_packet_id = packet_id;
+                    // self.expected_ingress_packet_chunks_count = packet_chunks_count;
+                    self.expected_ingress_chunk_num = 0;
+                }
+
+                if (self.expected_ingress_chunk_num == @as(?u8, chunk_num)) {
+                    try self.ingress_payload_buf.appendSlice(self.gpa, payload);
+
+                    if (chunk_num == packet_chunks_count - 1) {
+                        recv_msg = try self.ingress_payload_buf.toOwnedSlice(self.gpa);
+                        self.stats.payload_bytes_rx += @intCast(recv_msg.?.len);
+                        self.expected_ingress_packet_id = null;
+                    } else {
+                        self.expected_ingress_chunk_num = chunk_num + 1;
                     }
                 } else {
-                    break :msg_cont_blk false;
-                }
-            };
-            if (!msg_continued) {
-                self.ingress_payload_buf.clearRetainingCapacity();
-                self.expected_ingress_packet_id = packet_id;
-                // self.expected_ingress_packet_chunks_count = packet_chunks_count;
-                self.expected_ingress_chunk_num = 0;
-            }
-
-            if (self.expected_ingress_chunk_num == @as(?u8, chunk_num)) {
-                try self.ingress_payload_buf.appendSlice(self.gpa, payload);
-
-                if (chunk_num == packet_chunks_count - 1) {
-                    recv_msg = try self.ingress_payload_buf.toOwnedSlice(self.gpa);
                     self.expected_ingress_packet_id = null;
-                } else {
-                    self.expected_ingress_chunk_num = chunk_num + 1;
                 }
-            } else {
-                self.expected_ingress_packet_id = null;
             }
         }
 
+        // Link logic
+        if (is_heartbeat) {
+            try self.syncToHeartbeat(io);
+        }
         const now = std.Io.Timestamp.now(io, .real);
         switch (self.link_state) {
             .unknown => {
                 if (recv_msg) |_| {
                     Logger.debug("They interrupted the silence", .{});
-                    self.link_state = createTurn(io, false);
+                    self.link_state = self.createTurn(io, false);
                     try self.receive();
                 } else {
-                    const first = self.egress_queue.popFront();
-                    if (first) |first_nn| {
-                        defer self.gpa.free(first_nn);
-                        Logger.debug("We're interrupting the silence", .{});
-                        self.link_state = createTurn(io, true);
-                        try self.chunkAndSend(first_nn);
+                    // This should decrease likelihood of collisions
+                    var rand_val: [4]u8 = undefined;
+                    io.random(&rand_val);
+                    if (@as(u32, @bitCast(rand_val)) % 1000 == 0) {
+                        const first = self.egress_queue.popFront();
+                        if (first) |first_nn| {
+                            defer self.gpa.free(first_nn);
+                            Logger.debug("We're interrupting the silence", .{});
+                            self.link_state = self.createTurn(io, true);
+                            try self.chunkAndSend(first_nn);
+                        } else {
+                            try self.receive();
+                        }
                     } else {
                         try self.receive();
                     }
                 }
             },
-            .our_turn => |our_turn| {
+            .our_turn => |*our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    const first = self.egress_queue.popFront();
-                    if (first) |first_nn| {
-                        defer self.gpa.free(first_nn);
-                        try self.chunkAndSend(first_nn);
+                    if (now.durationTo(our_turn.until).nanoseconds > (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
+                        const first = self.egress_queue.popFront();
+                        if (first) |first_nn| {
+                            defer self.gpa.free(first_nn);
+                            try self.chunkAndSend(first_nn);
+                        }
+                    } else {
+                        if (!our_turn.sent_heartbeat) {
+                            try self.sendHeartbeat();
+                            our_turn.sent_heartbeat = true;
+                        }
+
+                        try self.receive();
                     }
                 } else {
-                    Logger.debug("We're giving the turn back to them", .{});
-                    self.link_state = createTurn(io, false);
+                    // Logger.debug("We're giving the turn back to them", .{});
+                    self.link_state = self.createTurn(io, false);
+                    if (self.empty_turns >= 0) {
+                        self.empty_turns -= 1;
+                    }
+                    try self.receive();
                 }
             },
-            .their_turn => |their_turn| {
+            .their_turn => |*their_turn| {
                 if (now.durationTo(their_turn.until).nanoseconds > 0) {
                     //Still their turn
                     try self.receive();
                 } else {
-                    if (self.egress_queue.len > 0) {
-                        Logger.debug("We're getting the turn back", .{});
-                        self.link_state = createTurn(io, true);
+                    if (self.empty_turns >= 0) {
+                        // Logger.debug("We're getting the turn back", .{});
+                        self.link_state = self.createTurn(io, true);
                     } else {
                         Logger.debug("Back to silence", .{});
                         self.link_state = .unknown;
@@ -271,6 +368,31 @@ pub const Radio = struct {
             },
         }
 
-        return recv_msg;
+        // Link stats
+        if (self.stats.from.nanoseconds == 0) {
+            self.stats.from = std.Io.Timestamp.now(io, .real);
+        }
+        if (self.stats.from.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds() >= 5000) {
+            const time_s: f32 = @as(f32, @floatFromInt(self.stats.from.durationTo(.now(io, .real)).toMicroseconds())) / 1000000.0;
+            const bps_tx: f32 = @as(f32, @floatFromInt(self.stats.payload_bytes_tx)) / time_s;
+            const bps_rx: f32 = @as(f32, @floatFromInt(self.stats.payload_bytes_rx)) / time_s;
+            // const eps: f32 = @as(f32, @floatFromInt(self.stats.lost_messages)) / time_s;
+
+            Logger.info("Link stats: bps_tx={d: >8.1}, bps_rx={d: >8.1}, lost={d: >4}, heartbeat_syncs={d: >3}, total_shift={d: >8}us, egress_len={d: >3}", .{
+                bps_tx,
+                bps_rx,
+                self.stats.lost_messages,
+                self.stats.heartbeat_syncs,
+                self.stats.heartbeat_sync_total_shift_us,
+                self.egress_queue.len,
+            });
+            self.stats = .{};
+            self.stats.from = std.Io.Timestamp.now(io, .real);
+        }
+
+        return .{
+            .recv_msg = recv_msg,
+            .quick_update = quick_update,
+        };
     }
 };
