@@ -138,9 +138,10 @@ pub const Nrf905 = struct {
         const gpio_mask: u64 = @as(u64, 1) << @intCast(self.pins.dr_pin);
         var gpio_val: u64 = undefined;
         var retry_count: u32 = 0;
-        const max_retries: u32 = 200;
+        const max_retries: u32 = 200; // TODO: When waiting for events, we should specify retry duration, not count
         while (retry_count < max_retries) {
-            try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
+            // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
+            try self.gpio_ctrl.wait();
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
