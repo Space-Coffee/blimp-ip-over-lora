@@ -141,7 +141,7 @@ pub const Nrf905 = struct {
         const max_retries: u32 = 200; // TODO: When waiting for events, we should specify retry duration, not count
         while (retry_count < max_retries) {
             // try std.Io.sleep(self.io, .fromMicroseconds(500), .real);
-            try self.gpio_ctrl.wait();
+            try self.gpio_ctrl.poll();
             retry_count += 1;
 
             gpio_val = try self.gpio_ctrl.get(gpio_mask);
@@ -200,7 +200,7 @@ pub const Nrf905 = struct {
             .transmit_fn = interfaceTransmit,
             .receive_fn = interfaceReceive,
             .get_received_fn = interfaceGetReceived,
-            .wait_fn = interfaceWait,
+            .poll_fn = interfacePoll,
         };
     }
 
@@ -257,8 +257,8 @@ pub const Nrf905 = struct {
         return null;
     }
 
-    fn interfaceWait(self: *anyopaque) error{WaitError}!void {
+    fn interfacePoll(self: *anyopaque) error{PollError}!void {
         const self_typed: *Nrf905 = @ptrCast(@alignCast(self));
-        self_typed.gpio_ctrl.wait() catch return error.WaitError;
+        self_typed.gpio_ctrl.poll() catch return error.PollError;
     }
 };

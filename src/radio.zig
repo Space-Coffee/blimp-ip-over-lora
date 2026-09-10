@@ -39,20 +39,20 @@ pub const Radio = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
         receive_fn: *const fn (self: *anyopaque) error{ReceiveError}!void,
         get_received_fn: *const fn (self: *anyopaque) error{ReceiveError}!?[]const u8,
-        wait_fn: ?*const fn (self: *anyopaque) error{WaitError}!void,
+        poll_fn: ?*const fn (self: *anyopaque) error{PollError}!void,
 
         pub const failing = VTable{
             .transmit_fn = failingTransmit,
             .receive_fn = failingReceive,
             .get_received_fn = failingGetReceived,
-            .wait_fn = null,
+            .poll_fn = null,
         };
 
         pub const dummy = VTable{
             .transmit_fn = dummyTransmit,
             .receive_fn = dummyReceive,
             .get_received_fn = dummyGetReceived,
-            .wait_fn = null,
+            .poll_fn = null,
         };
 
         pub fn failingTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
@@ -92,9 +92,9 @@ pub const Radio = struct {
     };
 
     const UpdateMode = enum {
-        normal,
-        quick,
-        wait,
+        sleep,
+        immediate,
+        poll,
     };
 
     const Logger = std.log.scoped(.radio_link);
@@ -249,7 +249,7 @@ pub const Radio = struct {
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
         var is_heartbeat = false;
-        var update_mode: UpdateMode = .normal;
+        var update_mode: UpdateMode = .sleep;
         if (recv_packet) |recv_packet_nn| {
             const packet_id = recv_packet_nn[0];
             const packet_chunks_count = recv_packet_nn[1];
@@ -318,6 +318,7 @@ pub const Radio = struct {
                     Logger.debug("They interrupted the silence", .{});
                     self.link_state = self.createTurn(io, false);
                     try self.receive();
+                    update_mode = .poll;
                 } else {
                     // This should decrease likelihood of collisions
                     var rand_val: [4]u8 = undefined;
@@ -329,14 +330,14 @@ pub const Radio = struct {
                             Logger.debug("We're interrupting the silence", .{});
                             self.link_state = self.createTurn(io, true);
                             try self.chunkAndSend(first_nn);
-                            update_mode = .quick;
+                            update_mode = .immediate;
                         } else {
                             try self.receive();
-                            update_mode = .wait;
+                            update_mode = .poll;
                         }
                     } else {
                         try self.receive();
-                        update_mode = .wait;
+                        update_mode = .poll;
                     }
                 }
             },
@@ -348,7 +349,7 @@ pub const Radio = struct {
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             try self.chunkAndSend(first_nn);
-                            update_mode = .quick;
+                            update_mode = .immediate;
                         }
                     } else {
                         if (!our_turn.sent_heartbeat) {
@@ -357,7 +358,7 @@ pub const Radio = struct {
                         }
 
                         try self.receive();
-                        update_mode = .wait;
+                        // update_mode = .normal;
                     }
                 } else {
                     // Logger.debug("We're giving the turn back to them", .{});
@@ -366,19 +367,19 @@ pub const Radio = struct {
                         self.empty_turns -= 1;
                     }
                     try self.receive();
-                    update_mode = .wait;
+                    update_mode = .poll;
                 }
             },
             .their_turn => |*their_turn| {
                 if (now.durationTo(their_turn.until).nanoseconds > 0) {
                     //Still their turn
                     try self.receive();
-                    update_mode = .wait;
+                    update_mode = .poll;
                 } else {
                     if (self.empty_turns >= 0) {
                         // Logger.debug("We're getting the turn back", .{});
                         self.link_state = self.createTurn(io, true);
-                        update_mode = .quick;
+                        update_mode = .immediate;
                     } else {
                         Logger.debug("Back to silence", .{});
                         self.link_state = .unknown;
@@ -415,9 +416,9 @@ pub const Radio = struct {
         };
     }
 
-    pub fn wait(self: *Radio) std.Io.Cancelable!void {
-        if (self.vt.wait_fn) |wait_fn_nn| {
-            wait_fn_nn(self.impl) catch {};
+    pub fn poll(self: *Radio) std.Io.Cancelable!void {
+        if (self.vt.poll_fn) |poll_fn_nn| {
+            poll_fn_nn(self.impl) catch {};
         }
     }
 };

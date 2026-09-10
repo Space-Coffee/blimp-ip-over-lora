@@ -143,7 +143,7 @@ pub const GpioCtrl = struct {
         return vals.bits;
     }
 
-    pub fn wait(self: *GpioCtrl) !void {
+    pub fn poll(self: *GpioCtrl) !void {
         var poll_fds = [_]std.os.linux.pollfd{.{
             .fd = self.in_lines_fd,
             .events = std.os.linux.POLL.IN,

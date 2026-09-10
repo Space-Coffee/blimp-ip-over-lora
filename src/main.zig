@@ -115,9 +115,10 @@ pub fn main(init: std.process.Init) !void {
 
     const SelectU = union(enum) {
         sleep: std.Io.Cancelable!void,
+        poll: std.Io.Cancelable!void,
         tun_queue_read: error{ Canceled, Closed }![]const u8,
     };
-    var select_buf: [2]SelectU = undefined;
+    var select_buf: [3]SelectU = undefined;
     var select = std.Io.Select(SelectU).init(init.io, &select_buf);
 
     try select.concurrent(
@@ -127,6 +128,13 @@ pub fn main(init: std.process.Init) !void {
             init.io,
             std.Io.Duration.fromMilliseconds(1),
             std.Io.Clock.real,
+        },
+    );
+    try select.concurrent(
+        .poll,
+        radio.Radio.poll,
+        .{
+            &radio_iface,
         },
     );
     try select.concurrent(
@@ -141,43 +149,24 @@ pub fn main(init: std.process.Init) !void {
         const select_result = try select.await();
         switch (select_result) {
             .sleep => {
-                var update_result: @typeInfo(
-                    @typeInfo(
-                        @TypeOf(radio.Radio.update),
-                    ).@"fn".return_type.?,
-                ).error_union.payload = undefined;
-                while (true) {
-                    update_result = try radio_iface.update(init.io);
-                    if (update_result.recv_msg) |recv_msg_nn| {
-                        // defer init.gpa.free(recv_msg_nn);
-                        try radio2tun_queue.putOne(init.io, recv_msg_nn);
-                    }
-
-                    if (update_result.update_mode != .quick) {
-                        break;
-                    }
-                }
-
-                if (update_result.update_mode == .normal) {
-                    try select.concurrent(
-                        .sleep,
-                        std.Io.sleep,
-                        .{
-                            init.io,
-                            std.Io.Duration.fromMicroseconds(200),
-                            std.Io.Clock.real,
-                        },
-                    );
-                } else {
-                    // std.log.debug("Polling...", .{});
-                    try select.concurrent(
-                        .sleep,
-                        radio.Radio.wait,
-                        .{
-                            &radio_iface,
-                        },
-                    );
-                }
+                try select.concurrent(
+                    .sleep,
+                    std.Io.sleep,
+                    .{
+                        init.io,
+                        std.Io.Duration.fromMicroseconds(200),
+                        std.Io.Clock.real,
+                    },
+                );
+            },
+            .poll => {
+                try select.concurrent(
+                    .poll,
+                    radio.Radio.poll,
+                    .{
+                        &radio_iface,
+                    },
+                );
             },
             .tun_queue_read => |tun_queue_read| {
                 const msg = try tun_queue_read;
@@ -192,6 +181,23 @@ pub fn main(init: std.process.Init) !void {
                     },
                 );
             },
+        }
+
+        var update_result: @typeInfo(
+            @typeInfo(
+                @TypeOf(radio.Radio.update),
+            ).@"fn".return_type.?,
+        ).error_union.payload = undefined;
+        while (true) {
+            update_result = try radio_iface.update(init.io);
+            if (update_result.recv_msg) |recv_msg_nn| {
+                // defer init.gpa.free(recv_msg_nn);
+                try radio2tun_queue.putOne(init.io, recv_msg_nn);
+            }
+
+            if (update_result.update_mode != .immediate) {
+                break;
+            }
         }
     }
 }
