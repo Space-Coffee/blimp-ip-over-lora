@@ -147,6 +147,24 @@ pub fn main(init: std.process.Init) !void {
 
     while (true) {
         const select_result = try select.await();
+
+        var update_result: @typeInfo(
+            @typeInfo(
+                @TypeOf(radio.Radio.update),
+            ).@"fn".return_type.?,
+        ).error_union.payload = undefined;
+        while (true) {
+            update_result = try radio_iface.update(init.io);
+            if (update_result.recv_msg) |recv_msg_nn| {
+                // defer init.gpa.free(recv_msg_nn);
+                try radio2tun_queue.putOne(init.io, recv_msg_nn);
+            }
+
+            if (update_result.update_mode != .immediate) {
+                break;
+            }
+        }
+
         switch (select_result) {
             .sleep => {
                 try select.concurrent(
@@ -181,23 +199,6 @@ pub fn main(init: std.process.Init) !void {
                     },
                 );
             },
-        }
-
-        var update_result: @typeInfo(
-            @typeInfo(
-                @TypeOf(radio.Radio.update),
-            ).@"fn".return_type.?,
-        ).error_union.payload = undefined;
-        while (true) {
-            update_result = try radio_iface.update(init.io);
-            if (update_result.recv_msg) |recv_msg_nn| {
-                // defer init.gpa.free(recv_msg_nn);
-                try radio2tun_queue.putOne(init.io, recv_msg_nn);
-            }
-
-            if (update_result.update_mode != .immediate) {
-                break;
-            }
         }
     }
 }
