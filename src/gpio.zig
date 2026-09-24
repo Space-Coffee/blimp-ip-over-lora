@@ -150,7 +150,7 @@ pub const GpioCtrl = struct {
             .revents = 0,
         }};
         var buf: [512]u8 = undefined;
-        _ = try std.posix.poll(&poll_fds, 80);
+        _ = try std.posix.poll(&poll_fds, 500);
         _ = std.posix.read(self.in_lines_fd, &buf) catch |err| {
             if (err == error.WouldBlock) {
                 return;

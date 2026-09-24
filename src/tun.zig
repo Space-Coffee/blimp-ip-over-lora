@@ -113,6 +113,7 @@ pub const Tun = struct {
 
         // MTU
         ifr = std.mem.zeroes(c.ifreq);
+        @memcpy(ifr.ifr_ifrn.ifrn_name[0..assigned_name.len], assigned_name);
         ifr.ifr_ifru.ifru_mtu = @intCast(mtu);
         _ = try misc.ioctl_checked(
             socket.handle,
