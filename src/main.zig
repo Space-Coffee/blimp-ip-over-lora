@@ -103,6 +103,11 @@ pub fn main(init: std.process.Init) !void {
         .empty_turns = conf.radio.max_empty_turns,
         .max_empty_turns = conf.radio.max_empty_turns,
         .turn_duration_ms = conf.radio.turn_duration_ms,
+        .transmit_stage_ms = @intFromFloat(
+            @as(f32, @floatFromInt(
+                conf.radio.turn_duration_ms,
+            )) * conf.radio.transmit_stage_frac,
+        ),
         .heartbeat_offset_ms = @intFromFloat(
             @as(f32, @floatFromInt(
                 conf.radio.turn_duration_ms,
@@ -115,9 +120,10 @@ pub fn main(init: std.process.Init) !void {
 
     const SelectU = union(enum) {
         sleep: std.Io.Cancelable!void,
+        poll: std.Io.Cancelable!void,
         tun_queue_read: error{ Canceled, Closed }![]const u8,
     };
-    var select_buf: [2]SelectU = undefined;
+    var select_buf: [3]SelectU = undefined;
     var select = std.Io.Select(SelectU).init(init.io, &select_buf);
 
     try select.concurrent(
@@ -130,6 +136,13 @@ pub fn main(init: std.process.Init) !void {
         },
     );
     try select.concurrent(
+        .poll,
+        radio.Radio.poll,
+        .{
+            &radio_iface,
+        },
+    );
+    try select.concurrent(
         .tun_queue_read,
         std.Io.Queue([]const u8).getOne,
         .{
@@ -139,32 +152,49 @@ pub fn main(init: std.process.Init) !void {
 
     while (true) {
         const select_result = try select.await();
+
+        var update_result: @typeInfo(
+            @typeInfo(
+                @TypeOf(radio.Radio.update),
+            ).@"fn".return_type.?,
+        ).error_union.payload = undefined;
+        while (true) {
+            update_result = try radio_iface.update(init.io);
+            if (update_result.recv_msg) |recv_msg_nn| {
+                // defer init.gpa.free(recv_msg_nn);
+                try radio2tun_queue.putOne(init.io, recv_msg_nn);
+            }
+
+            if (update_result.update_mode != .immediate) {
+                break;
+            }
+        }
+
         switch (select_result) {
             .sleep => {
-                while (true) {
-                    const update_result = try radio_iface.update(init.io);
-                    if (update_result.recv_msg) |recv_msg_nn| {
-                        // defer init.gpa.free(recv_msg_nn);
-                        try radio2tun_queue.putOne(init.io, recv_msg_nn);
-                    }
-
-                    if (!update_result.quick_update) {
-                        break;
-                    }
-                }
-
                 try select.concurrent(
                     .sleep,
                     std.Io.sleep,
                     .{
                         init.io,
-                        std.Io.Duration.fromMicroseconds(200),
+                        // std.Io.Duration.fromMicroseconds(200),
+                        std.Io.Duration.fromMilliseconds(20),
                         std.Io.Clock.real,
+                    },
+                );
+            },
+            .poll => {
+                try select.concurrent(
+                    .poll,
+                    radio.Radio.poll,
+                    .{
+                        &radio_iface,
                     },
                 );
             },
             .tun_queue_read => |tun_queue_read| {
                 const msg = try tun_queue_read;
+                // std.log.debug("Sending message from tun to radio", .{});
                 try radio_iface.sendMessage(msg);
 
                 try select.concurrent(

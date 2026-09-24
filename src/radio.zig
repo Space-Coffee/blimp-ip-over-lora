@@ -25,6 +25,7 @@ pub const Radio = struct {
     empty_turns: i32 = 2,
     max_empty_turns: i32 = 2,
     turn_duration_ms: i64 = 800,
+    transmit_stage_ms: i64 = 550,
     heartbeat_offset_ms: i64 = 650,
     stats: struct {
         from: std.Io.Timestamp = .zero,
@@ -39,17 +40,20 @@ pub const Radio = struct {
         transmit_fn: *const fn (self: *anyopaque, data: []const u8) error{TransmitError}!void,
         receive_fn: *const fn (self: *anyopaque) error{ReceiveError}!void,
         get_received_fn: *const fn (self: *anyopaque) error{ReceiveError}!?[]const u8,
+        poll_fn: ?*const fn (self: *anyopaque) error{PollError}!void,
 
         pub const failing = VTable{
             .transmit_fn = failingTransmit,
             .receive_fn = failingReceive,
             .get_received_fn = failingGetReceived,
+            .poll_fn = null,
         };
 
         pub const dummy = VTable{
             .transmit_fn = dummyTransmit,
             .receive_fn = dummyReceive,
             .get_received_fn = dummyGetReceived,
+            .poll_fn = null,
         };
 
         pub fn failingTransmit(self: *anyopaque, data: []const u8) error{TransmitError}!void {
@@ -86,6 +90,12 @@ pub const Radio = struct {
             until: std.Io.Timestamp,
             sent_heartbeat: bool,
         },
+    };
+
+    const UpdateMode = enum {
+        sleep,
+        immediate,
+        poll,
     };
 
     const Logger = std.log.scoped(.radio_link);
@@ -232,12 +242,15 @@ pub const Radio = struct {
     pub fn update(
         self: *Radio,
         io: std.Io,
-    ) !struct { recv_msg: ?[]const u8, quick_update: bool } {
+    ) !struct {
+        recv_msg: ?[]const u8,
+        update_mode: UpdateMode,
+    } {
         // Reception
         const recv_packet = try self.getReceived();
         var recv_msg: ?[]const u8 = null;
         var is_heartbeat = false;
-        var quick_update = false;
+        var update_mode: UpdateMode = .sleep;
         if (recv_packet) |recv_packet_nn| {
             const packet_id = recv_packet_nn[0];
             const packet_chunks_count = recv_packet_nn[1];
@@ -249,7 +262,6 @@ pub const Radio = struct {
             //     "Received a packet: id {d}, chunks count {d}, chunk #{d}, chunk len {d}",
             //     .{ packet_id, packet_chunks_count, chunk_num, chunk_len },
             // );
-            quick_update = true;
             self.empty_turns = self.max_empty_turns;
 
             is_heartbeat = (packet_id == 0 and packet_chunks_count == 0 and chunk_num == 255 and chunk_len == 0);
@@ -307,40 +319,49 @@ pub const Radio = struct {
                     Logger.debug("They interrupted the silence", .{});
                     self.link_state = self.createTurn(io, false);
                     try self.receive();
+                    update_mode = .poll;
                 } else {
                     // This should decrease likelihood of collisions
                     var rand_val: [4]u8 = undefined;
                     io.random(&rand_val);
-                    if (@as(u32, @bitCast(rand_val)) % 1000 == 0) {
+                    if (@as(u32, @bitCast(rand_val)) % 30 == 0) {
                         const first = self.egress_queue.popFront();
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             Logger.debug("We're interrupting the silence", .{});
                             self.link_state = self.createTurn(io, true);
                             try self.chunkAndSend(first_nn);
+                            update_mode = .immediate;
                         } else {
                             try self.receive();
+                            update_mode = .poll;
                         }
                     } else {
                         try self.receive();
+                        update_mode = .poll;
                     }
                 }
             },
             .our_turn => |*our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    if (now.durationTo(our_turn.until).nanoseconds > (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
+                    const time_left_ns = now.durationTo(our_turn.until).nanoseconds;
+                    if (time_left_ns > (self.turn_duration_ms - self.transmit_stage_ms) * 1000000) {
                         const first = self.egress_queue.popFront();
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             try self.chunkAndSend(first_nn);
+                            update_mode = .immediate;
                         }
-                    } else {
+                    } else if (time_left_ns < (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
                         if (!our_turn.sent_heartbeat) {
                             try self.sendHeartbeat();
                             our_turn.sent_heartbeat = true;
                         }
 
+                        try self.receive();
+                        // update_mode = .normal;
+                    } else {
                         try self.receive();
                     }
                 } else {
@@ -350,16 +371,19 @@ pub const Radio = struct {
                         self.empty_turns -= 1;
                     }
                     try self.receive();
+                    update_mode = .poll;
                 }
             },
             .their_turn => |*their_turn| {
                 if (now.durationTo(their_turn.until).nanoseconds > 0) {
                     //Still their turn
                     try self.receive();
+                    update_mode = .poll;
                 } else {
                     if (self.empty_turns >= 0) {
                         // Logger.debug("We're getting the turn back", .{});
                         self.link_state = self.createTurn(io, true);
+                        update_mode = .immediate;
                     } else {
                         Logger.debug("Back to silence", .{});
                         self.link_state = .unknown;
@@ -392,7 +416,13 @@ pub const Radio = struct {
 
         return .{
             .recv_msg = recv_msg,
-            .quick_update = quick_update,
+            .update_mode = update_mode,
         };
+    }
+
+    pub fn poll(self: *Radio) std.Io.Cancelable!void {
+        if (self.vt.poll_fn) |poll_fn_nn| {
+            poll_fn_nn(self.impl) catch {};
+        }
     }
 };
