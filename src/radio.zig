@@ -25,6 +25,7 @@ pub const Radio = struct {
     empty_turns: i32 = 2,
     max_empty_turns: i32 = 2,
     turn_duration_ms: i64 = 800,
+    transmit_stage_ms: i64 = 550,
     heartbeat_offset_ms: i64 = 650,
     stats: struct {
         from: std.Io.Timestamp = .zero,
@@ -344,14 +345,15 @@ pub const Radio = struct {
             .our_turn => |*our_turn| {
                 if (now.durationTo(our_turn.until).nanoseconds > 0) {
                     // Still our turn
-                    if (now.durationTo(our_turn.until).nanoseconds > (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
+                    const time_left_ns = now.durationTo(our_turn.until).nanoseconds;
+                    if (time_left_ns > (self.turn_duration_ms - self.transmit_stage_ms) * 1000000) {
                         const first = self.egress_queue.popFront();
                         if (first) |first_nn| {
                             defer self.gpa.free(first_nn);
                             try self.chunkAndSend(first_nn);
                             update_mode = .immediate;
                         }
-                    } else {
+                    } else if (time_left_ns < (self.turn_duration_ms - self.heartbeat_offset_ms) * 1000000) {
                         if (!our_turn.sent_heartbeat) {
                             try self.sendHeartbeat();
                             our_turn.sent_heartbeat = true;
@@ -359,6 +361,8 @@ pub const Radio = struct {
 
                         try self.receive();
                         // update_mode = .normal;
+                    } else {
+                        try self.receive();
                     }
                 } else {
                     // Logger.debug("We're giving the turn back to them", .{});

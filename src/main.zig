@@ -103,6 +103,11 @@ pub fn main(init: std.process.Init) !void {
         .empty_turns = conf.radio.max_empty_turns,
         .max_empty_turns = conf.radio.max_empty_turns,
         .turn_duration_ms = conf.radio.turn_duration_ms,
+        .transmit_stage_ms = @intFromFloat(
+            @as(f32, @floatFromInt(
+                conf.radio.turn_duration_ms,
+            )) * conf.radio.transmit_stage_frac,
+        ),
         .heartbeat_offset_ms = @intFromFloat(
             @as(f32, @floatFromInt(
                 conf.radio.turn_duration_ms,

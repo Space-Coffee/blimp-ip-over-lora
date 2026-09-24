@@ -19,6 +19,7 @@ pub const ConfigRoot = struct {
         packet_len_max: u32,
         max_empty_turns: i32,
         turn_duration_ms: i64,
+        transmit_stage_frac: f32,
         heartbeat_offset_frac: f32,
     },
     tun: struct {
